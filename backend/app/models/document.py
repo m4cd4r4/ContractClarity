@@ -28,7 +28,7 @@ class Document(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    doc_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, name="metadata")
 
     # Relationships
     chunks: Mapped[list["Chunk"]] = relationship(
@@ -54,7 +54,7 @@ class Chunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     page_number: Mapped[Optional[int]] = mapped_column(Integer)
     embedding = mapped_column(Vector(768))  # nomic-embed-text dimension
-    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    chunk_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, name="metadata")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -83,7 +83,7 @@ class Clause(Base):
     summary: Mapped[Optional[str]] = mapped_column(Text)
     risk_level: Mapped[Optional[str]] = mapped_column(String(20))
     confidence: Mapped[Optional[float]] = mapped_column(Float)
-    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    clause_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, name="metadata")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

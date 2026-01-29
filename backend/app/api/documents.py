@@ -105,13 +105,13 @@ async def upload_document(
             file_type=doc.file_type,
             page_count=doc.page_count,
             status=doc.status,
-            metadata=doc.metadata,
+            metadata=doc.doc_metadata,
         )
 
     except Exception as e:
         # Cleanup on failure
         doc.status = "failed"
-        doc.metadata = {"error": str(e)}
+        doc.doc_metadata = {"error": str(e)}
         await db.commit()
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
@@ -158,7 +158,7 @@ async def list_documents(
             page_count=doc.page_count,
             status=doc.status,
             chunk_count=len(doc.chunks) if doc.chunks else 0,
-            metadata=doc.metadata,
+            metadata=doc.doc_metadata,
         )
         for doc in documents
     ]
@@ -204,7 +204,7 @@ async def get_document(
         page_count=doc.page_count,
         status=doc.status,
         chunk_count=len(doc.chunks) if doc.chunks else 0,
-        metadata=doc.metadata,
+        metadata=doc.doc_metadata,
         download_url=download_url,
     )
 
@@ -257,7 +257,7 @@ async def reprocess_document(
 
     # Reset status and queue for reprocessing
     doc.status = "queued"
-    doc.metadata = {**doc.metadata, "reprocessed": True}
+    doc.doc_metadata = {**doc.doc_metadata, "reprocessed": True}
     await db.commit()
 
     # Queue Celery task
@@ -305,7 +305,7 @@ async def get_document_chunks(
                 "page_number": chunk.page_number,
                 "content": chunk.content,
                 "has_embedding": chunk.embedding is not None,
-                "metadata": chunk.metadata,
+                "metadata": chunk.chunk_metadata,
             }
             for chunk in chunks
         ],

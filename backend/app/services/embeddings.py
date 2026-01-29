@@ -39,7 +39,7 @@ async def generate_embeddings(chunks: list[Chunk], db: AsyncSession) -> None:
 
             except Exception as e:
                 # Log error but continue with other chunks
-                chunk.metadata["embedding_error"] = str(e)
+                chunk.chunk_metadata["embedding_error"] = str(e)
 
             # Add chunk to session
             db.add(chunk)

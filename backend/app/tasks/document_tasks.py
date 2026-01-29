@@ -74,8 +74,8 @@ async def _process_document_async(document_id: str):
 
             # Update document metadata
             doc.page_count = page_count
-            doc.metadata = {
-                **doc.metadata,
+            doc.doc_metadata = {
+                **doc.doc_metadata,
                 "ocr_tier": ocr_tier_used,
                 "extraction_confidence": extraction_result.get("confidence", 1.0),
                 "char_count": len(text),
@@ -107,7 +107,7 @@ async def _process_document_async(document_id: str):
         except Exception as e:
             # Update status to failed
             doc.status = "failed"
-            doc.metadata = {**doc.metadata, "error": str(e)}
+            doc.doc_metadata = {**doc.doc_metadata, "error": str(e)}
             await db.commit()
             raise
 
