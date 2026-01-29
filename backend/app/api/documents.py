@@ -1,18 +1,15 @@
 """Document upload and management endpoints."""
 
-import os
 from uuid import UUID
-from pathlib import Path
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.config import get_settings
 from app.models.document import Document
-from app.services.pdf_extractor import extract_text_from_pdf
-from app.services.chunking import chunk_document
-from app.services.embeddings import generate_embeddings
+from app.services.storage import upload_document as minio_upload, delete_document as minio_delete, get_document_url
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 settings = get_settings()
@@ -24,12 +21,20 @@ class DocumentResponse(BaseModel):
     id: UUID
     filename: str
     file_size: int | None
+    file_type: str | None
     page_count: int | None
     status: str
     chunk_count: int = 0
+    metadata: dict = {}
 
     class Config:
         from_attributes = True
+
+
+class DocumentDetailResponse(DocumentResponse):
+    """Detailed document response with download URL."""
+
+    download_url: str | None = None
 
 
 class DocumentListResponse(BaseModel):
@@ -37,43 +42,43 @@ class DocumentListResponse(BaseModel):
 
     documents: list[DocumentResponse]
     total: int
+    skip: int
+    limit: int
 
 
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Upload a contract document (PDF).
 
-    The document will be processed in the background:
-    1. Extract text from PDF
-    2. Chunk the text
-    3. Generate embeddings
-    4. Store in database
+    The document will be stored in MinIO and processed asynchronously by Celery:
+    1. Store in MinIO
+    2. Extract text (4-tier OCR pipeline)
+    3. Chunk the text
+    4. Generate embeddings
+    5. Store in database
     """
     # Validate file type
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    # Check file size
+    # Read file content
     content = await file.read()
+
+    # Check file size
     if len(content) > settings.max_file_size:
         raise HTTPException(
             status_code=400,
             detail=f"File too large. Maximum size is {settings.max_file_size // (1024*1024)}MB",
         )
 
-    # Create upload directory if needed
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
     # Create document record
     doc = Document(
         filename=file.filename,
-        file_path="",  # Will be set after saving
+        file_path="",  # Will be set after MinIO upload
         file_size=len(content),
         file_type="application/pdf",
         status="uploading",
@@ -82,81 +87,125 @@ async def upload_document(
     await db.commit()
     await db.refresh(doc)
 
-    # Save file with document ID as filename
-    file_path = upload_dir / f"{doc.id}.pdf"
-    with open(file_path, "wb") as f:
-        f.write(content)
+    try:
+        # Upload to MinIO
+        object_path = minio_upload(doc.id, content)
+        doc.file_path = object_path
+        doc.status = "queued"
+        await db.commit()
 
-    # Update file path
-    doc.file_path = str(file_path)
-    doc.status = "uploaded"
-    await db.commit()
+        # Queue Celery task for processing
+        from app.tasks.document_tasks import process_document
+        process_document.delay(str(doc.id))
 
-    # Process in background
-    background_tasks.add_task(process_document, str(doc.id))
+        return DocumentResponse(
+            id=doc.id,
+            filename=doc.filename,
+            file_size=doc.file_size,
+            file_type=doc.file_type,
+            page_count=doc.page_count,
+            status=doc.status,
+            metadata=doc.metadata,
+        )
 
-    return DocumentResponse(
-        id=doc.id,
-        filename=doc.filename,
-        file_size=doc.file_size,
-        page_count=doc.page_count,
-        status=doc.status,
-    )
+    except Exception as e:
+        # Cleanup on failure
+        doc.status = "failed"
+        doc.metadata = {"error": str(e)}
+        await db.commit()
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
 @router.get("", response_model=DocumentListResponse)
 async def list_documents(
     skip: int = 0,
     limit: int = 20,
+    status: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all uploaded documents."""
-    # Get documents
-    query = select(Document).offset(skip).limit(limit).order_by(Document.uploaded_at.desc())
+    """
+    List all uploaded documents.
+
+    Args:
+        skip: Number of documents to skip (pagination)
+        limit: Maximum documents to return
+        status: Filter by status (queued, processing, completed, failed)
+    """
+    # Build query
+    query = select(Document).options(selectinload(Document.chunks))
+
+    if status:
+        query = query.where(Document.status == status)
+
+    query = query.offset(skip).limit(limit).order_by(Document.uploaded_at.desc())
+
     result = await db.execute(query)
     documents = result.scalars().all()
 
     # Get total count
-    count_query = select(Document)
+    count_query = select(func.count(Document.id))
+    if status:
+        count_query = count_query.where(Document.status == status)
     count_result = await db.execute(count_query)
-    total = len(count_result.scalars().all())
+    total = count_result.scalar()
 
-    doc_responses = []
-    for doc in documents:
-        doc_responses.append(
-            DocumentResponse(
-                id=doc.id,
-                filename=doc.filename,
-                file_size=doc.file_size,
-                page_count=doc.page_count,
-                status=doc.status,
-                chunk_count=len(doc.chunks) if doc.chunks else 0,
-            )
+    doc_responses = [
+        DocumentResponse(
+            id=doc.id,
+            filename=doc.filename,
+            file_size=doc.file_size,
+            file_type=doc.file_type,
+            page_count=doc.page_count,
+            status=doc.status,
+            chunk_count=len(doc.chunks) if doc.chunks else 0,
+            metadata=doc.metadata,
         )
+        for doc in documents
+    ]
 
-    return DocumentListResponse(documents=doc_responses, total=total)
+    return DocumentListResponse(
+        documents=doc_responses,
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 
 
-@router.get("/{document_id}", response_model=DocumentResponse)
+@router.get("/{document_id}", response_model=DocumentDetailResponse)
 async def get_document(
     document_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a specific document by ID."""
-    query = select(Document).where(Document.id == document_id)
+    """Get a specific document by ID with download URL."""
+    query = (
+        select(Document)
+        .where(Document.id == document_id)
+        .options(selectinload(Document.chunks))
+    )
     result = await db.execute(query)
     doc = result.scalar_one_or_none()
 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    return DocumentResponse(
+    # Generate presigned download URL
+    download_url = None
+    if doc.status == "completed":
+        try:
+            download_url = get_document_url(doc.id)
+        except Exception:
+            pass
+
+    return DocumentDetailResponse(
         id=doc.id,
         filename=doc.filename,
         file_size=doc.file_size,
+        file_type=doc.file_type,
         page_count=doc.page_count,
         status=doc.status,
         chunk_count=len(doc.chunks) if doc.chunks else 0,
+        metadata=doc.metadata,
+        download_url=download_url,
     )
 
 
@@ -173,9 +222,11 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Delete file from disk
-    if doc.file_path and os.path.exists(doc.file_path):
-        os.remove(doc.file_path)
+    # Delete from MinIO
+    try:
+        minio_delete(document_id)
+    except Exception:
+        pass  # Continue even if MinIO delete fails
 
     # Delete from database (cascades to chunks and clauses)
     await db.delete(doc)
@@ -184,47 +235,81 @@ async def delete_document(
     return {"status": "deleted", "document_id": str(document_id)}
 
 
-async def process_document(document_id: str):
+@router.post("/{document_id}/reprocess")
+async def reprocess_document(
+    document_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Background task to process an uploaded document.
+    Reprocess a document.
 
-    1. Extract text from PDF
-    2. Chunk the text
-    3. Generate embeddings
-    4. Store chunks in database
+    Useful if processing failed or you want to regenerate embeddings.
     """
-    from app.core.database import AsyncSessionLocal
+    query = select(Document).where(Document.id == document_id)
+    result = await db.execute(query)
+    doc = result.scalar_one_or_none()
 
-    async with AsyncSessionLocal() as db:
-        try:
-            # Get document
-            query = select(Document).where(Document.id == UUID(document_id))
-            result = await db.execute(query)
-            doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
 
-            if not doc:
-                return
+    if doc.status == "processing":
+        raise HTTPException(status_code=400, detail="Document is already processing")
 
-            # Update status
-            doc.status = "processing"
-            await db.commit()
+    # Reset status and queue for reprocessing
+    doc.status = "queued"
+    doc.metadata = {**doc.metadata, "reprocessed": True}
+    await db.commit()
 
-            # Extract text
-            text, page_count = await extract_text_from_pdf(doc.file_path)
-            doc.page_count = page_count
+    # Queue Celery task
+    from app.tasks.document_tasks import process_document
+    process_document.delay(str(doc.id))
 
-            # Chunk text
-            chunks = await chunk_document(text, doc.id)
+    return {"status": "queued", "document_id": str(document_id)}
 
-            # Generate embeddings and store
-            await generate_embeddings(chunks, db)
 
-            # Update status
-            doc.status = "completed"
-            await db.commit()
+@router.get("/{document_id}/chunks")
+async def get_document_chunks(
+    document_id: UUID,
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get chunks for a document."""
+    from app.models.document import Chunk
 
-        except Exception as e:
-            doc.status = "failed"
-            doc.metadata = {"error": str(e)}
-            await db.commit()
-            raise
+    # Verify document exists
+    doc_query = select(Document).where(Document.id == document_id)
+    doc_result = await db.execute(doc_query)
+    doc = doc_result.scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Get chunks
+    query = (
+        select(Chunk)
+        .where(Chunk.document_id == document_id)
+        .offset(skip)
+        .limit(limit)
+        .order_by(Chunk.chunk_index)
+    )
+    result = await db.execute(query)
+    chunks = result.scalars().all()
+
+    return {
+        "document_id": str(document_id),
+        "chunks": [
+            {
+                "id": str(chunk.id),
+                "chunk_index": chunk.chunk_index,
+                "page_number": chunk.page_number,
+                "content": chunk.content,
+                "has_embedding": chunk.embedding is not None,
+                "metadata": chunk.metadata,
+            }
+            for chunk in chunks
+        ],
+        "total": len(doc.chunks) if doc.chunks else 0,
+        "skip": skip,
+        "limit": limit,
+    }

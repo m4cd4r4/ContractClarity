@@ -11,12 +11,25 @@ asyncpg==0.29.0
 alembic==1.13.1
 pgvector==0.2.4
 
-# Redis
+# Celery (async task queue)
+celery[redis]==5.3.6
 redis==5.0.1
-arq==0.25.0
+
+# MinIO (S3-compatible storage)
+minio==7.2.3
 
 # PDF Processing
 pymupdf==1.23.8
+pdf2image==1.17.0
+
+# OCR Pipeline
+pytesseract==0.3.10
+paddleocr==2.7.3
+paddlepaddle==2.6.0  # CPU version, use paddlepaddle-gpu for GPU
+
+# Image Processing
+pillow==10.2.0
+numpy==1.26.3
 
 # Text Processing
 langchain==0.1.0

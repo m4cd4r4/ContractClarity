@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: contractclarity_dev
       POSTGRES_DB: contractclarity
     ports:
-      - "5433:5432"  # Use 5433 to avoid conflicts
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -20,16 +20,35 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis for queue and caching
+  # Redis for Celery queue and caching
   redis:
     image: redis:7-alpine
     container_name: contractclarity-redis
     ports:
-      - "6380:6379"  # Use 6380 to avoid conflicts
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MinIO for S3-compatible document storage
+  minio:
+    image: minio/minio:latest
+    container_name: contractclarity-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: contractclarity
+      MINIO_ROOT_PASSWORD: contractclarity_dev
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -39,10 +58,10 @@ services:
     image: ollama/ollama:latest
     container_name: contractclarity-ollama
     ports:
-      - "11435:11434"  # Use 11435 to avoid conflicts
+      - "11435:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # GPU support (uncomment if NVIDIA GPU available)
+    # GPU support (uncomment if NVIDIA GPU available on host)
     # deploy:
     #   resources:
     #     reservations:
@@ -63,21 +82,67 @@ services:
       - DATABASE_URL=postgresql://contractclarity:contractclarity_dev@postgres:5432/contractclarity
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama:11434
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=contractclarity
+      - MINIO_SECRET_KEY=contractclarity_dev
+      - MINIO_BUCKET=contracts
       - ENVIRONMENT=development
     volumes:
-      - ./backend/app:/app/app  # Hot reload
-      - uploads:/app/uploads
+      - ./backend/app:/app/app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_started
       ollama:
         condition: service_started
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # Celery Worker for async document processing
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contractclarity-worker
+    environment:
+      - DATABASE_URL=postgresql://contractclarity:contractclarity_dev@postgres:5432/contractclarity
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_URL=http://ollama:11434
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=contractclarity
+      - MINIO_SECRET_KEY=contractclarity_dev
+      - MINIO_BUCKET=contracts
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      ollama:
+        condition: service_started
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=2
+
+  # Celery Beat for scheduled tasks (optional)
+  # beat:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: contractclarity-beat
+  #   environment:
+  #     - DATABASE_URL=postgresql://contractclarity:contractclarity_dev@postgres:5432/contractclarity
+  #     - REDIS_URL=redis://redis:6379/0
+  #   depends_on:
+  #     - redis
+  #   command: celery -A app.worker.celery_app beat --loglevel=info
+
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
   ollama_data:
-  uploads:
