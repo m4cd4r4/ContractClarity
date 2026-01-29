@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     upload_dir: str = "./uploads"
     max_file_size: int = 50 * 1024 * 1024  # 50MB
 
-    # Chunking
-    chunk_size: int = 1000
-    chunk_overlap: int = 200
+    # Chunking (optimized for legal documents)
+    # ~1500 tokens ≈ 6000 characters for legal text
+    chunk_size: int = 6000
+    chunk_overlap: int = 600
 
     class Config:
         env_file = ".env"

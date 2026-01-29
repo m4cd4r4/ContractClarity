@@ -1,37 +1,47 @@
 # ContractClarity - Project Plan
 
-**Version:** 2.0
+**Version:** 3.0
 **Created:** 2026-01-29
 **Updated:** 2026-01-29
 **Author:** Macdara
-**Status:** Planning (Revised Scope)
+**Status:** Active Development
 
 ---
 
 ## Executive Summary
 
-ContractClarity is a **technical demonstration** of RAG systems, knowledge graphs, and LLM-powered document analysis applied to contract review. It showcases AI engineering skills relevant to roles at companies like NOHUP who work with legal/financial clients.
+ContractClarity is a **production-quality** AI-powered contract analysis platform for M&A due diligence. It demonstrates enterprise-grade RAG systems, knowledge graphs, and LLM-powered document analysis - built to production standards even though regulatory barriers (SOC 2, compliance) prevent immediate enterprise sales.
 
-**This is a portfolio project, not a commercial product.**
+**This is a full product, not a demo.**
 
-**Primary Goal:**
-- Demonstrate RAG/Knowledge Graph skills for NOHUP application and similar AI engineering roles
+**Primary Goals:**
+1. Build production-quality contract analysis with full technical implementation
+2. Demonstrate enterprise-grade AI engineering skills (portfolio value)
+3. Create a working product ready for SMB market or open-source release
 
 **Secondary Goals:**
-- Learn hands-on RAG/vector search implementation
-- Build a compelling demo with public contract data
+- Fine-tune custom models for legal document understanding
 - Part of the "Clarity Suite" branding (BloodClarity, RadioClarity)
+- Potential SMB revenue stream (solo lawyers, small firms)
 
-**Explicit Non-Goals (for MVP):**
-- ❌ Selling to enterprise (PE firms, investment banks, law firms)
-- ❌ Production deployment with real user data
-- ❌ SOC 2 compliance or enterprise security
-- ❌ Multi-tenancy or user authentication
-- ❌ Monetization
+**What We're Building:**
+- ✅ Full OCR pipeline (4 tiers: PyMuPDF → Tesseract → PaddleOCR → Pixtral)
+- ✅ Production file storage (MinIO)
+- ✅ Async job processing (Celery + Redis)
+- ✅ Knowledge graph with entity extraction
+- ✅ User authentication (NextAuth.js)
+- ✅ Custom model fine-tuning (LoRA)
+- ✅ Production deployment on VPS
 
-**If This Becomes a Product Later:**
-- Target SMB market (solo lawyers, small firms, startups) - NOT enterprise
-- Or open-source it for portfolio/community value
+**What We're NOT Pursuing (Regulatory Barriers):**
+- ❌ Enterprise sales (PE firms, investment banks, Big Law)
+- ❌ SOC 2 Type II certification ($50-100K, 12 months)
+- ❌ Enterprise security questionnaires
+
+**Market Strategy:**
+- Target SMB market (solo lawyers, small firms, startups) - no SOC 2 required
+- Open-source option for community/portfolio value
+- The tech is enterprise-grade; the compliance is not
 
 ---
 
@@ -210,27 +220,60 @@ This demonstrates real skills without requiring user trust or security complianc
 
 ---
 
-## Self-Hosting Strategy
+## Infrastructure
 
-### VPS Infrastructure (45.77.233.102)
+### Production Environment
 
-**Current Donnacha Stack:**
+**VPS (45.77.233.102 - Sydney):**
+- 4 vCPU, 8GB RAM, 160GB SSD
+- Shared with Donnacha, Chlann, other projects
+- Running: nginx, postgres, redis, ollama
+
+**Local Development Machine:**
+- GPU available for model training
+- Used for: LoRA fine-tuning, heavy inference testing, development
+
+### VPS Service Architecture
+
+**Existing Services (Donnacha Stack):**
 ```
-- nginx (reverse proxy)
-- donnacha-backend (FastAPI)
-- postgres (5432)
-- redis (6379)
-- whisper (9000)
-- ollama (11434)
+- nginx (80/443)      - Reverse proxy, SSL termination
+- donnacha-backend    - FastAPI (port 8001)
+- postgres (5432)     - Shared database server
+- redis (6379)        - Shared cache/queue
+- whisper (9000)      - Voice transcription
+- ollama (11434)      - LLM inference (shared)
 ```
 
-**Add ContractClarity Stack:**
+**ContractClarity Services (New):**
 ```
-- contractclarity-backend (FastAPI) - port 8002
-- contractclarity-worker (Celery) - background jobs
-- minio (9001) - document storage (if not already present)
-- tesseract - installed on host for OCR
+- contractclarity-backend (8002)   - FastAPI application
+- contractclarity-worker           - Celery worker (async jobs)
+- minio (9000/9001)                - S3-compatible document storage
+- tesseract                        - OCR (installed on host)
+- paddleocr                        - Complex OCR (Python package)
 ```
+
+### Local GPU Training Environment
+
+**Hardware:**
+- GPU for LoRA fine-tuning and experimentation
+- Used for training, not production inference
+
+**Training Stack:**
+```
+- PyTorch + CUDA
+- Hugging Face Transformers
+- PEFT (LoRA fine-tuning)
+- Weights & Biases (experiment tracking)
+- Ollama (local model serving)
+```
+
+**Training Workflow:**
+1. Train/fine-tune model locally on GPU
+2. Export to GGUF format
+3. Deploy to Ollama on VPS
+4. Model serves inference in production
 
 ### Shared Resources
 | Resource | Shared With | Notes |
@@ -673,129 +716,198 @@ search_queries (id, user_id, query, results_count, created_at)
 
 ---
 
-## Development Phases (Revised: 4 Weeks)
+## Development Phases (Full Product: 8 Weeks)
 
-### Phase 1: Core Pipeline (Weeks 1-2)
-**Goal:** Working RAG pipeline with demo data
+### Phase 1: Core Infrastructure (Weeks 1-2)
+**Goal:** Production-ready backend with document ingestion
 
 | Week | Focus | Deliverables |
 |------|-------|--------------|
-| 1 | Setup + Ingestion | Repo, Docker, PDF extraction (PyMuPDF only), chunking |
-| 2 | RAG Pipeline | Embeddings, pgvector storage, semantic search |
+| 1 | Infrastructure | Docker, PostgreSQL + pgvector, Redis, MinIO, FastAPI skeleton |
+| 2 | Document Pipeline | Full OCR pipeline (all 4 tiers), chunking, Celery workers |
 
 **What to build:**
-- FastAPI backend with upload endpoint
-- PyMuPDF text extraction (native PDFs only - skip OCR for demo)
-- LangChain chunking (512 tokens, overlap)
+- Docker Compose with all services (postgres, redis, minio, ollama)
+- FastAPI backend with async SQLAlchemy
+- MinIO integration for document storage
+- Full OCR pipeline: PyMuPDF → Tesseract → PaddleOCR → Pixtral
+- Celery + Redis for async job processing
+- Document status tracking (uploaded → processing → completed/failed)
+
+**Exit Criteria:**
+- Upload any PDF (native or scanned), get extracted text
+- Documents stored in MinIO with metadata in PostgreSQL
+- Background processing works reliably
+
+### Phase 2: RAG Pipeline (Weeks 3-4)
+**Goal:** Semantic search with vector embeddings
+
+| Week | Focus | Deliverables |
+|------|-------|--------------|
+| 3 | Embeddings | Chunking strategy, embedding generation, pgvector storage |
+| 4 | Search + Retrieval | Semantic search API, retrieval optimization, hybrid search |
+
+**What to build:**
+- Semantic chunking (clause-aware, 1500 tokens with overlap)
+- Embedding generation via Ollama (nomic-embed-text)
 - pgvector storage with HNSW indexing
-- Basic semantic search endpoint
-
-**What to skip:**
-- ❌ User authentication
-- ❌ OCR (use native PDFs only)
-- ❌ File storage (MinIO) - keep in /tmp for demo
-- ❌ Celery workers - sync processing is fine for demo
+- Semantic search endpoint with relevance scoring
+- Hybrid search (vector + keyword) for better recall
+- Search result ranking and filtering
 
 **Exit Criteria:**
-- Can upload PDF, see chunks
-- Can search across documents semantically
+- Search "termination clause" returns relevant chunks
+- Sub-second search across 1000+ documents
+- Relevance is good (manual testing)
 
-### Phase 2: AI Features + Polish (Weeks 3-4)
-**Goal:** Impressive demo with structured extraction
+### Phase 3: AI Analysis (Weeks 5-6)
+**Goal:** Structured extraction and summarization
 
 | Week | Focus | Deliverables |
 |------|-------|--------------|
-| 3 | LLM Features | Clause extraction, summaries, risk flags |
-| 4 | UI + Demo Flow | Polished frontend, demo script, GitHub README |
+| 5 | Clause Extraction | LLM prompts, structured JSON output, clause classification |
+| 6 | Summaries + Risk | Plain English summaries, risk flagging, confidence scores |
 
 **What to build:**
-- Clause extraction with structured JSON output (Qwen 2.5)
+- Clause extraction prompts (Qwen 2.5 for structured output)
+- Clause type classification (14 standard M&A clause types)
 - Plain English summaries (Llama 3.2)
-- Simple risk flagging
-- Next.js frontend with shadcn/ui
-- Document viewer with highlighted clauses
-- Search results page
-- Knowledge graph visualization (simple D3.js or similar)
-
-**What to skip:**
-- ❌ Comparison matrix
-- ❌ Custom templates
-- ❌ Export functionality
-- ❌ Production deployment (Vercel preview is fine)
+- Risk flagging logic (rule-based + LLM)
+- Confidence scoring for extractions
+- Entity extraction (parties, dates, amounts)
 
 **Exit Criteria:**
-- Impressive demo flow for interview
-- Clean GitHub repo with README
-- Works on local machine or Vercel preview
+- Upload contract, see extracted clauses with summaries
+- Risk levels assigned (high/medium/low)
+- Entities extracted and linked
 
-### Phase 3: Future (Only If Needed)
-**Only pursue if:**
-- NOHUP doesn't work out AND
-- You want to pivot to SMB product
+### Phase 4: Knowledge Graph (Week 7)
+**Goal:** Entity relationships and graph queries
 
-**Then consider:**
-- User authentication
-- Multi-tenancy
-- OCR for scanned documents
-- Production deployment
-- Pricing model for SMB market
+| Week | Focus | Deliverables |
+|------|-------|--------------|
+| 7 | Knowledge Graph | Entity model, relationship extraction, graph queries |
+
+**What to build:**
+- Entity data model (parties, dates, obligations, rights)
+- Relationship extraction (party→contract, party→obligation)
+- Graph storage in PostgreSQL (JSONB + recursive CTEs)
+- Graph query API (find all contracts with Party X)
+- Basic graph visualization (D3.js force graph)
+
+**Exit Criteria:**
+- Can answer "show all contracts involving Company X"
+- Relationships visible in UI
+- Graph traversal works
+
+### Phase 5: Frontend + Polish (Week 8)
+**Goal:** Production-ready UI
+
+| Week | Focus | Deliverables |
+|------|-------|--------------|
+| 8 | Frontend | Next.js app, document viewer, search UI, auth |
+
+**What to build:**
+- Next.js 14 with App Router
+- shadcn/ui components
+- Document upload with drag-and-drop
+- Document viewer with clause highlighting
+- Search interface with filters
+- Knowledge graph visualization
+- User authentication (NextAuth.js)
+- Responsive design
+
+**Exit Criteria:**
+- Full user flow works (upload → process → search → view)
+- Looks professional
+- Auth works (GitHub OAuth or email)
+
+### Phase 6: Model Fine-Tuning (Ongoing)
+**Goal:** Custom models for legal domain
+
+**What to build:**
+- LoRA fine-tuning setup (local GPU)
+- Clause classification model (fine-tuned Qwen 2.5)
+- Legal NER model (parties, dates, amounts)
+- Evaluation pipeline (precision, recall, F1)
+- Model versioning and deployment
+
+**Training Data:**
+- CUAD dataset (13K labeled clauses)
+- MAUD dataset (152 M&A agreements)
+- SEC EDGAR filings (additional examples)
+
+**Exit Criteria:**
+- Custom model outperforms base model on clause extraction
+- Model deployed to Ollama on VPS
 
 ---
 
-## Timeline (Revised: 4 Weeks)
+## Timeline (Full Product: 8+ Weeks)
 
-### Demo Timeline: 4 Weeks
+### Development Timeline
 
 ```
-Week 1: Setup + Ingestion
-├── Git repo with README
-├── Docker compose (postgres + pgvector)
-├── FastAPI skeleton
-├── PDF upload + PyMuPDF extraction
-└── Basic chunking
+Week 1-2: Core Infrastructure
+├── Docker compose (all services)
+├── FastAPI backend with async SQLAlchemy
+├── MinIO document storage
+├── Full OCR pipeline (4 tiers)
+├── Celery + Redis job queue
+└── Document ingestion working
 
-Week 2: RAG Pipeline
-├── Embedding generation (nomic-embed-text via Ollama)
-├── pgvector storage
-├── Semantic search endpoint
-├── Basic Next.js shell
-└── Upload + search working
+Week 3-4: RAG Pipeline
+├── Semantic chunking (clause-aware)
+├── Embedding generation (nomic-embed-text)
+├── pgvector storage with HNSW
+├── Semantic search API
+├── Hybrid search (vector + keyword)
+└── Search relevance tuning
 
-Week 3: AI Features
-├── Clause extraction prompts (Qwen 2.5)
-├── Plain English summaries (Llama 3.2)
+Week 5-6: AI Analysis
+├── Clause extraction prompts
+├── Clause classification (14 types)
+├── Plain English summaries
 ├── Risk flagging logic
-├── Structured JSON output
-└── Knowledge graph data model
+├── Entity extraction
+└── Confidence scoring
 
-Week 4: Polish + Demo
-├── Polished UI (shadcn/ui)
+Week 7: Knowledge Graph
+├── Entity data model
+├── Relationship extraction
+├── Graph queries
+├── Graph visualization
+└── Cross-document linking
+
+Week 8: Frontend + Auth
+├── Next.js 14 application
 ├── Document viewer with highlights
-├── Knowledge graph visualization
-├── Demo script preparation
-├── GitHub README + screenshots
-└── Record demo video (optional)
+├── Search interface
+├── Knowledge graph UI
+├── User authentication
+└── Production polish
+
+Ongoing: Model Fine-Tuning
+├── LoRA training setup
+├── Clause classification model
+├── Legal NER model
+├── Evaluation pipeline
+└── Deploy to VPS
 ```
 
 ### Milestones
 
 | Milestone | Target | Deliverable |
 |-----------|--------|-------------|
-| M1: RAG Works | End of Week 2 | Upload PDF → search works |
-| M2: AI Extraction | End of Week 3 | Clauses extracted, summaries generated |
-| M3: Demo Ready | End of Week 4 | Impressive demo for interviews |
+| M1: Ingestion Works | End of Week 2 | Upload any PDF, get extracted text |
+| M2: Search Works | End of Week 4 | Semantic search returns relevant results |
+| M3: Analysis Works | End of Week 6 | Clauses extracted with summaries |
+| M4: Full Product | End of Week 8 | Complete UI with auth |
+| M5: Custom Models | Ongoing | Fine-tuned models deployed |
 
-### Contingency
+### No Hard Deadline
 
-**If NOHUP interview is scheduled for Week 2:**
-- Fast-track to basic demo (upload + search)
-- Skip knowledge graph visualization
-- Focus on talking points, not polish
-
-**If no interview scheduled:**
-- Take full 4 weeks for polished demo
-- Record video walkthrough
-- Write blog post about architecture
+Build it properly. Quality over speed. Each milestone produces something usable.
 
 ---
 
@@ -1093,39 +1205,64 @@ If fine-tuning needed:
 
 ---
 
-## Summary: The Honest Plan
+## Summary: The Full Product
 
 ### What This Is
-**A 4-week portfolio demo** demonstrating RAG/knowledge graph skills for AI engineering job applications (primarily NOHUP).
+**A production-quality contract analysis platform** with enterprise-grade technology. The only barrier to enterprise sales is regulatory compliance (SOC 2), not technical capability.
 
 ### What This Is NOT
-- ❌ A commercial product
-- ❌ A startup
-- ❌ An enterprise tool for PE firms or investment banks
-- ❌ Something requiring SOC 2 compliance
+- ❌ A toy demo or prototype
+- ❌ An enterprise product (we can't sell to PE/IB without SOC 2)
+- ❌ A startup (yet) - it's a portfolio piece with product potential
 
-### The Priority Order
+### What We're Building
 
-1. **Apply to NOHUP today** - The proposal is ready
-2. **Build demo if interview scheduled** - 1-2 weeks for basic RAG pipeline
-3. **Full 4-week demo if needed** - Polish for portfolio/other applications
+| Component | Implementation | Status |
+|-----------|----------------|--------|
+| OCR Pipeline | 4-tier (PyMuPDF → Tesseract → PaddleOCR → Pixtral) | Full |
+| Document Storage | MinIO (S3-compatible) | Full |
+| Job Queue | Celery + Redis | Full |
+| Vector Search | pgvector with HNSW | Full |
+| LLM Inference | Ollama (self-hosted) | Full |
+| Knowledge Graph | PostgreSQL + entity extraction | Full |
+| Frontend | Next.js 14 + shadcn/ui | Full |
+| Authentication | NextAuth.js | Full |
+| Model Training | LoRA fine-tuning (local GPU) | Full |
+| VPS Deployment | 45.77.233.102 | Full |
 
 ### Key Technical Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Data source | Public contracts (CUAD, SEC) | No user trust/security needed |
-| OCR | Skip (native PDFs only) | 95% of contracts are native, reduces scope |
-| Auth | Skip | Demo doesn't need users |
-| Deployment | Local/Vercel preview | No production infra needed |
-| LLMs | Ollama (local) | Free, demonstrates self-hosting |
-| Vector DB | pgvector | Free, sufficient for demo scale |
+| OCR | Full 4-tier pipeline | Handle any document quality |
+| Storage | MinIO | Production-ready, S3-compatible |
+| Processing | Celery + Redis | Async, scalable |
+| LLMs | Ollama + custom fine-tuned | Free, customizable |
+| Vector DB | pgvector | Free, integrated with PostgreSQL |
+| Training | Local GPU + LoRA | Custom models, zero API cost |
+| Deployment | VPS (shared infra) | Cost-effective, full control |
 
-### Success = NOHUP Interview
+### Market Position
 
-If ContractClarity helps land the NOHUP job (or similar), it succeeded.
+**Can sell to:**
+- Solo lawyers
+- Small law firms (<10 people)
+- Startup legal teams
+- Real estate agents
+- Small business owners
 
-Everything else (GitHub stars, LinkedIn engagement, "real users") is secondary.
+**Cannot sell to (without SOC 2):**
+- Investment banks
+- PE firms
+- Big Law
+- Fortune 500 companies
+
+### Success Criteria
+
+1. **Technical:** Production-quality implementation that could handle real workloads
+2. **Portfolio:** Demonstrates enterprise-grade AI engineering skills
+3. **Learning:** Hands-on RAG, knowledge graphs, model fine-tuning
+4. **Optional:** SMB revenue or open-source community adoption
 
 ---
 
