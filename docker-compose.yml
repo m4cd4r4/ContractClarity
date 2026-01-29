@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: contractclarity-postgres
+    environment:
+      POSTGRES_USER: contractclarity
+      POSTGRES_PASSWORD: contractclarity_dev
+      POSTGRES_DB: contractclarity
+    ports:
+      - "5433:5432"  # Use 5433 to avoid conflicts
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contractclarity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for queue and caching
+  redis:
+    image: redis:7-alpine
+    container_name: contractclarity-redis
+    ports:
+      - "6380:6379"  # Use 6380 to avoid conflicts
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Ollama for LLM inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: contractclarity-ollama
+    ports:
+      - "11435:11434"  # Use 11435 to avoid conflicts
+    volumes:
+      - ollama_data:/root/.ollama
+    # GPU support (uncomment if NVIDIA GPU available)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contractclarity-backend
+    ports:
+      - "8002:8000"
+    environment:
+      - DATABASE_URL=postgresql://contractclarity:contractclarity_dev@postgres:5432/contractclarity
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_URL=http://ollama:11434
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend/app:/app/app  # Hot reload
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+  uploads:

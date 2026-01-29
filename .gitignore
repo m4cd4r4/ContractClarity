@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+.docker/
+
+# Node.js (frontend)
+node_modules/
+.next/
+out/
+.nuxt/
+dist/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Data
+*.pdf
+*.docx
+uploads/
+data/contracts/
+!data/sample/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+credentials.json
+token.json
