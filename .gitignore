@@ -72,3 +72,6 @@ Thumbs.db
 *.key
 credentials.json
 token.json
+
+# Sample contracts
+sample-contracts/

@@ -37,6 +37,9 @@ class Document(Base):
     clauses: Mapped[list["Clause"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
+    entities: Mapped[list["Entity"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
 
 
 class Chunk(Base):

@@ -25,16 +25,16 @@ pdf2image==1.17.0
 # OCR Pipeline
 pytesseract==0.3.10
 paddleocr==2.7.3
-paddlepaddle==2.6.0  # CPU version, use paddlepaddle-gpu for GPU
+paddlepaddle==2.6.2  # CPU version, use paddlepaddle-gpu for GPU
 
 # Image Processing
 pillow==10.2.0
 numpy==1.26.3
 
-# Text Processing
-langchain==0.1.0
-langchain-text-splitters==0.0.1
-tiktoken==0.5.2
+# Text Processing (updated for dependency compatibility)
+langchain-core>=0.1.23
+langchain-text-splitters>=0.0.1
+tiktoken>=0.5.2
 
 # HTTP Client (for Ollama)
 httpx==0.26.0

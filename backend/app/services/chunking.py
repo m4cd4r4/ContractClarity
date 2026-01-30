@@ -54,7 +54,7 @@ async def chunk_document(text: str, document_id: UUID) -> list[Chunk]:
             content=chunk_text,
             chunk_index=idx,
             page_number=page_number,
-            metadata={
+            chunk_metadata={
                 "char_count": len(chunk_text),
                 "word_count": len(chunk_text.split()),
             },
