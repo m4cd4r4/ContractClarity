@@ -2,31 +2,33 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   FileText, Search, Upload, AlertTriangle, CheckCircle,
   Clock, Database, Zap, ChevronRight, X, Loader2,
-  FileWarning, Shield, Network
+  FileWarning, Shield, Network, TrendingUp, BarChart3,
+  ExternalLink, Eye, PlayCircle
 } from 'lucide-react'
 import { api, Document, AnalysisSummary } from '@/lib/api'
 
 type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
 
 const riskColors: Record<RiskLevel, string> = {
-  critical: 'text-red-500 bg-red-500/10',
-  high: 'text-orange-500 bg-orange-500/10',
-  medium: 'text-amber-500 bg-amber-500/10',
-  low: 'text-emerald-500 bg-emerald-500/10',
+  critical: 'text-red-400 bg-red-500/10 border-red-500/20',
+  high: 'text-orange-400 bg-orange-500/10 border-orange-500/20',
+  medium: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+  low: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
 }
 
-const riskBorders: Record<RiskLevel, string> = {
-  critical: 'border-red-500/30',
-  high: 'border-orange-500/30',
-  medium: 'border-amber-500/30',
-  low: 'border-emerald-500/30',
+const riskGlow: Record<RiskLevel, string> = {
+  critical: 'shadow-[0_0_20px_rgba(239,68,68,0.3)]',
+  high: 'shadow-[0_0_15px_rgba(249,115,22,0.2)]',
+  medium: 'shadow-[0_0_10px_rgba(245,158,11,0.15)]',
+  low: 'shadow-none',
 }
 
 export default function Dashboard() {
+  const router = useRouter()
   const [documents, setDocuments] = useState<Document[]>([])
   const [stats, setStats] = useState<{
     documents_indexed: number
@@ -36,6 +38,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null)
+  const [hoveredDoc, setHoveredDoc] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisSummary | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Array<{
@@ -117,6 +120,10 @@ export default function Dashboard() {
     }
   }
 
+  const navigateToDocument = (docId: string) => {
+    router.push(`/documents/${docId}`)
+  }
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
@@ -131,22 +138,22 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-ink-950">
       {/* Header */}
-      <header className="border-b border-ink-800/50 bg-ink-950/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-[1800px] mx-auto px-6 py-4">
+      <header className="border-b border-ink-800/50 bg-ink-950/95 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-[1920px] mx-auto px-8 py-5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center">
-                <Shield className="w-5 h-5 text-ink-950" />
+            <div className="flex items-center gap-4">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-accent via-accent to-accent-dark flex items-center justify-center shadow-lg shadow-accent/20">
+                <Shield className="w-6 h-6 text-ink-950" />
               </div>
               <div>
-                <h1 className="font-display text-xl font-bold tracking-tight">ContractClarity</h1>
-                <p className="text-xs text-ink-500">M&A Due Diligence Platform</p>
+                <h1 className="font-display text-2xl font-bold tracking-tight text-ink-50">ContractClarity</h1>
+                <p className="text-[11px] text-ink-500 tracking-wide uppercase font-mono">M&A Due Diligence Platform</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-5">
               {/* Search */}
               <div className="relative">
                 <label htmlFor="search-input" className="sr-only">Search contracts</label>
@@ -157,31 +164,34 @@ export default function Dashboard() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                   placeholder="Search contracts..."
-                  className="w-80 pl-10 pr-4 py-2 bg-ink-900/50 border border-ink-800 rounded-lg
+                  className="w-96 pl-11 pr-4 py-2.5 bg-ink-900/60 border border-ink-700/50 rounded-xl
                            text-sm text-ink-100 placeholder:text-ink-500
-                           focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20"
+                           focus:outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10
+                           transition-all duration-200"
                 />
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-500" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-500" />
                 {searching && (
-                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent animate-spin" />
+                  <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent animate-spin" />
                 )}
               </div>
 
               {/* Advanced Search Link */}
-              <Link
-                href="/search"
-                className="text-sm text-ink-400 hover:text-accent transition-colors"
+              <button
+                type="button"
+                onClick={() => router.push('/search')}
+                className="text-sm text-ink-400 hover:text-accent transition-colors font-medium"
               >
                 Advanced Search
-              </Link>
+              </button>
 
               {/* Upload Button */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="flex items-center gap-2 px-4 py-2 bg-accent text-ink-950 font-medium rounded-lg
-                         hover:bg-accent-light transition-colors disabled:opacity-50"
+                className="flex items-center gap-2.5 px-5 py-2.5 bg-accent text-ink-950 font-semibold rounded-xl
+                         hover:bg-accent-light hover:shadow-lg hover:shadow-accent/20
+                         transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {uploading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -202,36 +212,40 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-[1800px] mx-auto px-6 py-8">
-        {/* Stats Row */}
+      <main className="max-w-[1920px] mx-auto px-8 py-8">
+        {/* Stats Row - Data Dense */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-4 gap-4 mb-8"
+          className="grid grid-cols-4 gap-5 mb-8"
         >
           <StatCard
             icon={<FileText className="w-5 h-5" />}
             value={stats?.documents_indexed ?? 0}
             label="Documents Indexed"
+            sublabel="Ready for analysis"
             delay={0}
           />
           <StatCard
             icon={<Database className="w-5 h-5" />}
             value={stats?.chunks_with_embeddings ?? 0}
             label="Text Chunks"
-            delay={0.1}
+            sublabel="Vector embeddings"
+            delay={0.05}
           />
           <StatCard
             icon={<Zap className="w-5 h-5" />}
             value={stats?.clauses_extracted ?? 0}
             label="Clauses Extracted"
-            delay={0.2}
+            sublabel="AI-powered analysis"
+            delay={0.1}
           />
           <StatCard
-            icon={<AlertTriangle className="w-5 h-5" />}
+            icon={<TrendingUp className="w-5 h-5" />}
             value={documents.filter(d => d.status === 'completed').length}
             label="Ready for Review"
-            delay={0.3}
+            sublabel="Completed processing"
+            delay={0.15}
           />
         </motion.div>
 
@@ -244,13 +258,16 @@ export default function Dashboard() {
               exit={{ opacity: 0, height: 0 }}
               className="mb-8"
             >
-              <div className="card p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-display text-lg font-semibold">Search Results</h2>
+              <div className="card p-6 border-accent/20">
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <h2 className="font-display text-xl font-semibold text-ink-50">Search Results</h2>
+                    <p className="text-xs text-ink-500 mt-0.5 font-mono">{searchResults.length} matches found</p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setSearchResults([])}
-                    className="p-1 hover:bg-ink-800 rounded"
+                    className="p-2 hover:bg-ink-800 rounded-lg transition-colors"
                     aria-label="Clear search results"
                   >
                     <X className="w-4 h-4 text-ink-400" />
@@ -262,16 +279,19 @@ export default function Dashboard() {
                       key={result.chunk_id}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                      className="p-4 bg-ink-900/30 border border-ink-800/50 rounded-lg"
+                      transition={{ delay: i * 0.03 }}
+                      className="p-4 bg-ink-900/40 border border-ink-800/50 rounded-lg hover:border-accent/30 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-accent">{result.document_name}</span>
-                        <span className="text-xs text-ink-500">
-                          Score: {(result.combined_score * 100).toFixed(0)}%
-                        </span>
+                        <span className="text-sm font-semibold text-accent">{result.document_name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-ink-500 font-mono uppercase">Relevance</span>
+                          <span className="text-xs text-ink-300 font-mono bg-ink-800/50 px-2 py-0.5 rounded">
+                            {(result.combined_score * 100).toFixed(0)}%
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-sm text-ink-300 line-clamp-2">{result.content}</p>
+                      <p className="text-sm text-ink-300 leading-relaxed line-clamp-2">{result.content}</p>
                     </motion.div>
                   ))}
                 </div>
@@ -282,26 +302,41 @@ export default function Dashboard() {
 
         {/* Main Grid */}
         <div className="grid grid-cols-3 gap-6">
-          {/* Document List */}
+          {/* Document List - Enhanced */}
           <div className="col-span-2">
-            <div className="card">
-              <div className="px-6 py-4 border-b border-ink-800/50">
-                <h2 className="font-display text-lg font-semibold">Contract Portfolio</h2>
+            <div className="card overflow-hidden">
+              <div className="px-6 py-5 border-b border-ink-800/50 bg-ink-925">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="font-display text-xl font-semibold text-ink-50">Contract Portfolio</h2>
+                    <p className="text-[11px] text-ink-500 mt-1 font-mono">
+                      {documents.length} documents · Click to analyze
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/search')}
+                    className="text-xs text-ink-400 hover:text-accent transition-colors flex items-center gap-1.5"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    Advanced View
+                  </button>
+                </div>
               </div>
-              <div className="divide-y divide-ink-800/30">
+              <div className="divide-y divide-ink-800/30 max-h-[calc(100vh-320px)] overflow-y-auto">
                 {loading ? (
-                  <div className="p-12 text-center">
-                    <Loader2 className="w-8 h-8 text-accent animate-spin mx-auto" />
-                    <p className="mt-4 text-ink-500">Loading documents...</p>
+                  <div className="p-16 text-center">
+                    <Loader2 className="w-10 h-10 text-accent animate-spin mx-auto" />
+                    <p className="mt-5 text-ink-500 text-sm">Loading documents...</p>
                   </div>
                 ) : documents.length === 0 ? (
-                  <div className="p-12 text-center">
-                    <FileText className="w-12 h-12 text-ink-700 mx-auto" />
-                    <p className="mt-4 text-ink-500">No contracts uploaded yet</p>
+                  <div className="p-16 text-center">
+                    <FileText className="w-14 h-14 text-ink-700 mx-auto" />
+                    <p className="mt-5 text-ink-500 text-sm font-medium">No contracts uploaded yet</p>
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="mt-4 btn-primary"
+                      className="mt-6 btn-primary"
                     >
                       Upload Your First Contract
                     </button>
@@ -312,29 +347,70 @@ export default function Dashboard() {
                       key={doc.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.03 }}
+                      transition={{ delay: i * 0.02 }}
+                      onMouseEnter={() => setHoveredDoc(doc.id)}
+                      onMouseLeave={() => setHoveredDoc(null)}
                       onClick={() => loadAnalysis(doc.id)}
-                      className={`px-6 py-4 cursor-pointer transition-colors hover:bg-ink-900/30
-                                ${selectedDoc === doc.id ? 'bg-ink-900/50 border-l-2 border-accent' : ''}`}
+                      className={`px-6 py-5 cursor-pointer transition-all duration-200 relative group
+                                ${selectedDoc === doc.id
+                                  ? 'bg-ink-900/60 border-l-2 border-accent'
+                                  : 'hover:bg-ink-900/30 border-l-2 border-transparent'
+                                }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {getStatusIcon(doc.status)}
-                          <div>
-                            <h3 className="font-medium text-ink-100">{doc.filename}</h3>
-                            <div className="flex items-center gap-3 mt-1">
-                              <span className="text-xs text-ink-500">
-                                {doc.page_count ? `${doc.page_count} pages` : 'Processing...'}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-4 flex-1 min-w-0">
+                          <div className="mt-0.5">
+                            {getStatusIcon(doc.status)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-ink-100 text-[15px] leading-snug truncate">
+                              {doc.filename}
+                            </h3>
+                            <div className="flex items-center gap-4 mt-2">
+                              <span className="text-[11px] text-ink-500 font-mono uppercase tracking-wide">
+                                {doc.status === 'completed'
+                                  ? doc.page_count ? `${doc.page_count} pages` : 'Unknown pages'
+                                  : 'Processing...'
+                                }
                               </span>
                               {doc.chunk_count > 0 && (
-                                <span className="text-xs text-ink-500">
-                                  {doc.chunk_count} chunks
-                                </span>
+                                <>
+                                  <span className="text-ink-700">·</span>
+                                  <span className="text-[11px] text-ink-500 font-mono uppercase tracking-wide">
+                                    {doc.chunk_count} chunks
+                                  </span>
+                                </>
+                              )}
+                              {doc.status === 'completed' && (
+                                <>
+                                  <span className="text-ink-700">·</span>
+                                  <span className="text-[11px] text-emerald-500 font-mono uppercase tracking-wide">
+                                    Ready
+                                  </span>
+                                </>
                               )}
                             </div>
                           </div>
                         </div>
-                        <ChevronRight className="w-4 h-4 text-ink-600" />
+
+                        {/* Action Buttons - Show on hover */}
+                        <div className={`flex items-center gap-2 transition-opacity duration-200 ${
+                          hoveredDoc === doc.id || selectedDoc === doc.id ? 'opacity-100' : 'opacity-0'
+                        }`}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigateToDocument(doc.id)
+                            }}
+                            className="p-2 bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors"
+                            aria-label="View document details"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <ChevronRight className="w-5 h-5 text-ink-600 group-hover:text-accent transition-colors" />
+                        </div>
                       </div>
                     </motion.div>
                   ))
@@ -343,105 +419,135 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Analysis Panel */}
+          {/* Risk Analysis Panel - Enhanced & Data Dense */}
           <div className="col-span-1">
             <AnimatePresence mode="wait">
               {selectedDoc && analysis ? (
                 <motion.div
                   key={selectedDoc}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="card"
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  transition={{ duration: 0.2 }}
+                  className="card overflow-hidden"
                 >
-                  <div className="px-6 py-4 border-b border-ink-800/50">
-                    <h2 className="font-display text-lg font-semibold">Risk Assessment</h2>
+                  {/* Header */}
+                  <div className="px-6 py-5 border-b border-ink-800/50 bg-ink-925">
+                    <h2 className="font-display text-xl font-semibold text-ink-50">Risk Assessment</h2>
+                    <p className="text-[11px] text-ink-500 mt-1 font-mono uppercase tracking-wide">
+                      AI-Powered Analysis
+                    </p>
                   </div>
+
                   <div className="p-6 space-y-6">
-                    {/* Overall Risk */}
-                    <div className={`p-4 rounded-lg border ${riskBorders[analysis.overall_risk as RiskLevel] || 'border-ink-800'}
-                                  ${analysis.overall_risk === 'critical' ? 'risk-critical' : ''}
-                                  ${analysis.overall_risk === 'high' ? 'risk-high' : ''}`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-ink-400">Overall Risk Level</span>
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium uppercase
-                                       ${riskColors[analysis.overall_risk as RiskLevel] || 'text-ink-400 bg-ink-800'}`}>
+                    {/* Overall Risk - Prominent */}
+                    <div className={`p-5 rounded-xl border-2 ${riskGlow[analysis.overall_risk as RiskLevel]}
+                                  ${riskColors[analysis.overall_risk as RiskLevel]}`}>
+                      <div className="text-center">
+                        <div className="text-[11px] text-ink-400 font-mono uppercase tracking-wide mb-2">
+                          Overall Risk Level
+                        </div>
+                        <div className={`text-3xl font-bold uppercase tracking-tight ${
+                          analysis.overall_risk === 'critical' ? 'text-red-400' :
+                          analysis.overall_risk === 'high' ? 'text-orange-400' :
+                          analysis.overall_risk === 'medium' ? 'text-amber-400' : 'text-emerald-400'
+                        }`}>
                           {analysis.overall_risk}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Risk Breakdown */}
-                    <div>
-                      <h3 className="text-sm font-medium text-ink-400 mb-3">Risk Distribution</h3>
-                      <div className="space-y-2">
-                        {(['critical', 'high', 'medium', 'low'] as RiskLevel[]).map((level) => (
-                          <div key={level} className="flex items-center justify-between">
-                            <span className={`text-sm capitalize ${
-                              level === 'critical' ? 'text-red-400' :
-                              level === 'high' ? 'text-orange-400' :
-                              level === 'medium' ? 'text-amber-400' : 'text-emerald-400'
-                            }`}>
-                              {level}
-                            </span>
-                            <span className="font-mono text-sm text-ink-300">
-                              {analysis.risk_summary[level] || 0}
-                            </span>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-current/20">
+                          <div className="text-[10px] text-ink-500 font-mono uppercase">
+                            {analysis.clauses_extracted} Clauses Analyzed
                           </div>
-                        ))}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Clause Count */}
-                    <div className="pt-4 border-t border-ink-800/50">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-ink-400">Clauses Extracted</span>
-                        <span className="font-mono text-lg text-ink-100">{analysis.clauses_extracted}</span>
+                    {/* Risk Distribution - Data Dense Grid */}
+                    <div>
+                      <h3 className="text-[11px] font-mono uppercase tracking-wide text-ink-400 mb-3">
+                        Risk Distribution
+                      </h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        {(['critical', 'high', 'medium', 'low'] as RiskLevel[]).map((level) => {
+                          const count = analysis.risk_summary[level] || 0
+                          return (
+                            <div
+                              key={level}
+                              className={`p-4 rounded-lg border ${riskColors[level]} text-center`}
+                            >
+                              <div className={`text-2xl font-bold font-mono ${
+                                level === 'critical' ? 'text-red-400' :
+                                level === 'high' ? 'text-orange-400' :
+                                level === 'medium' ? 'text-amber-400' : 'text-emerald-400'
+                              }`}>
+                                {count}
+                              </div>
+                              <div className="text-[10px] uppercase font-mono tracking-wide text-ink-500 mt-1">
+                                {level}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
 
                     {/* High Risk Highlights */}
                     {analysis.high_risk_highlights.length > 0 && (
-                      <div className="pt-4 border-t border-ink-800/50">
-                        <h3 className="text-sm font-medium text-ink-400 mb-3">Attention Required</h3>
-                        <div className="space-y-2">
+                      <div>
+                        <h3 className="text-[11px] font-mono uppercase tracking-wide text-ink-400 mb-3">
+                          Attention Required
+                        </h3>
+                        <div className="space-y-3">
                           {analysis.high_risk_highlights.slice(0, 3).map((highlight, i) => (
-                            <div
+                            <motion.div
                               key={i}
-                              className={`p-3 rounded-lg border text-sm
-                                        ${highlight.risk_level === 'critical' ? 'risk-critical border-red-500/20' : 'risk-high border-orange-500/20'}`}
+                              initial={{ opacity: 0, x: -5 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: i * 0.05 }}
+                              className={`p-4 rounded-lg border text-sm ${
+                                highlight.risk_level === 'critical'
+                                  ? 'border-red-500/30 bg-red-500/5'
+                                  : 'border-orange-500/30 bg-orange-500/5'
+                              }`}
                             >
-                              <div className="flex items-center gap-2 mb-1">
-                                <AlertTriangle className={`w-3 h-3 ${
-                                  highlight.risk_level === 'critical' ? 'text-red-500' : 'text-orange-500'
+                              <div className="flex items-center gap-2 mb-2">
+                                <AlertTriangle className={`w-4 h-4 ${
+                                  highlight.risk_level === 'critical' ? 'text-red-400' : 'text-orange-400'
                                 }`} />
-                                <span className="font-medium text-ink-200 capitalize">
+                                <span className="font-semibold text-ink-100 text-xs uppercase tracking-wide">
                                   {highlight.clause_type.replace(/_/g, ' ')}
                                 </span>
                               </div>
-                              <p className="text-ink-400 text-xs line-clamp-2">{highlight.summary}</p>
-                            </div>
+                              <p className="text-ink-400 text-xs leading-relaxed line-clamp-3">
+                                {highlight.summary}
+                              </p>
+                            </motion.div>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {/* Actions */}
-                    <div className="pt-4 border-t border-ink-800/50 flex gap-2">
-                      <Link
-                        href={`/documents/${selectedDoc}`}
-                        className="flex-1 btn-primary text-center text-sm"
+                    {/* Actions - Prominent CTAs */}
+                    <div className="pt-4 border-t border-ink-800/50 space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => navigateToDocument(selectedDoc)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-accent text-ink-950
+                                 font-semibold rounded-xl hover:bg-accent-light hover:shadow-lg hover:shadow-accent/20
+                                 transition-all duration-200"
                       >
-                        View Details
-                      </Link>
-                      <Link
-                        href={`/documents/${selectedDoc}/graph`}
-                        className="flex items-center justify-center gap-2 px-4 py-2 bg-ink-800 text-ink-200
-                                 rounded-lg hover:bg-ink-700 transition-colors"
-                        aria-label="View knowledge graph"
+                        <Eye className="w-4 h-4" />
+                        View Full Analysis
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/documents/${selectedDoc}/graph`)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-ink-800 text-ink-200
+                                 font-medium rounded-xl hover:bg-ink-700 transition-colors"
                       >
                         <Network className="w-4 h-4" />
-                      </Link>
+                        Knowledge Graph
+                      </button>
                     </div>
                   </div>
                 </motion.div>
@@ -449,16 +555,18 @@ export default function Dashboard() {
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="card p-6"
+                  className="card p-8"
                 >
                   <div className="text-center">
-                    <Loader2 className="w-8 h-8 text-accent animate-spin mx-auto" />
-                    <p className="mt-4 text-ink-500">Loading analysis...</p>
+                    <Loader2 className="w-10 h-10 text-accent animate-spin mx-auto" />
+                    <p className="mt-5 text-ink-500 text-sm">Loading analysis...</p>
                     <button
                       type="button"
                       onClick={() => triggerAnalysis(selectedDoc)}
-                      className="mt-4 btn-secondary text-sm"
+                      className="mt-6 px-5 py-2.5 bg-ink-800 text-ink-200 rounded-xl hover:bg-ink-700
+                               transition-colors font-medium text-sm flex items-center gap-2 mx-auto"
                     >
+                      <PlayCircle className="w-4 h-4" />
                       Run Analysis
                     </button>
                   </div>
@@ -467,11 +575,13 @@ export default function Dashboard() {
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="card p-6"
+                  className="card p-8"
                 >
-                  <div className="text-center py-8">
-                    <Shield className="w-12 h-12 text-ink-700 mx-auto" />
-                    <p className="mt-4 text-ink-500">Select a document to view risk assessment</p>
+                  <div className="text-center py-12">
+                    <Shield className="w-16 h-16 text-ink-700 mx-auto" />
+                    <p className="mt-6 text-ink-500 text-sm">
+                      Select a document to view risk assessment
+                    </p>
                   </div>
                 </motion.div>
               )}
@@ -487,28 +597,33 @@ function StatCard({
   icon,
   value,
   label,
+  sublabel,
   delay,
 }: {
   icon: React.ReactNode
   value: number
   label: string
+  sublabel: string
   delay: number
 }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay }}
-      className="card p-5"
+      transition={{ delay, duration: 0.4 }}
+      className="card p-6 hover:border-accent/20 transition-all duration-300 group"
     >
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="stat-value">{value.toLocaleString()}</p>
-          <p className="stat-label">{label}</p>
-        </div>
-        <div className="p-2 rounded-lg bg-accent/10 text-accent">
+      <div className="flex items-start justify-between mb-3">
+        <div className="p-2.5 rounded-xl bg-accent/10 text-accent group-hover:bg-accent/20 transition-colors">
           {icon}
         </div>
+      </div>
+      <div className="mt-2">
+        <p className="text-3xl font-bold font-mono text-ink-50 tracking-tight">
+          {value.toLocaleString()}
+        </p>
+        <p className="text-sm font-semibold text-ink-300 mt-1">{label}</p>
+        <p className="text-[10px] text-ink-500 mt-1 font-mono uppercase tracking-wide">{sublabel}</p>
       </div>
     </motion.div>
   )
