@@ -57,8 +57,9 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true)
   const [extracting, setExtracting] = useState(false)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
+  const [hoveredNode, setHoveredNode] = useState<Node | null>(null)
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState(0.8)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
@@ -78,7 +79,7 @@ export default function GraphPage() {
 
       if (graph && graph.nodes.length > 0) {
         setGraphData(graph)
-        initializeGraph(graph)
+        // initializeGraph will be called by effect when graphData changes
       }
     } catch (error) {
       console.error('Failed to load graph:', error)
@@ -97,7 +98,7 @@ export default function GraphPage() {
         if (graph && graph.nodes.length > 0) {
           clearInterval(checkInterval)
           setGraphData(graph)
-          initializeGraph(graph)
+          // initializeGraph will be called by effect when graphData changes
           setExtracting(false)
         }
       }, 3000)
@@ -116,17 +117,26 @@ export default function GraphPage() {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const width = canvas.clientWidth
-    const height = canvas.clientHeight
+    // Get logical dimensions from container
+    const container = canvas.parentElement
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    const width = rect.width
+    const height = rect.height
 
-    // Initialize nodes with random positions in a circle
+    // Initialize nodes with wide spread + randomization
     nodesRef.current = data.nodes.map((node, i) => {
       const angle = (2 * Math.PI * i) / data.nodes.length
-      const radius = Math.min(width, height) * 0.3
+      // Wide initial radius filling more of the canvas
+      const baseRadius = Math.min(width, height) * 0.35
+      const radius = baseRadius * (0.5 + Math.random() * 0.5)
+      // Random offset to break symmetry
+      const jitterX = (Math.random() - 0.5) * 80
+      const jitterY = (Math.random() - 0.5) * 80
       return {
         ...node,
-        x: width / 2 + radius * Math.cos(angle),
-        y: height / 2 + radius * Math.sin(angle),
+        x: width / 2 + radius * Math.cos(angle) + jitterX,
+        y: height / 2 + radius * Math.sin(angle) + jitterY,
         vx: 0,
         vy: 0,
       }
@@ -150,14 +160,17 @@ export default function GraphPage() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const width = canvas.width
-    const height = canvas.height
+    // Use logical dimensions stored in data attributes
+    const width = Number(canvas.dataset.logicalWidth) || canvas.width
+    const height = Number(canvas.dataset.logicalHeight) || canvas.height
 
-    // Force simulation parameters
-    const repulsion = 5000
-    const attraction = 0.01
-    const damping = 0.9
-    const centerForce = 0.01
+    // Force simulation parameters - tuned for spread and stability
+    const repulsion = 5000      // Very strong push apart
+    const attraction = 0.002    // Weak pull together
+    const damping = 0.9         // Higher friction to settle faster
+    const centerForce = 0.002   // Light centering to keep graph visible
+    const maxVelocity = 5       // Slower movement for stability
+    const minDistance = 80      // Larger minimum separation between nodes
 
     // Apply forces
     nodes.forEach((node) => {
@@ -170,15 +183,25 @@ export default function GraphPage() {
         node.vy = 0
       }
 
-      // Repulsion from other nodes
+      // Repulsion from other nodes with minimum distance enforcement
       nodes.forEach((other) => {
         if (node.id === other.id) return
         const dx = node.x - other.x
         const dy = node.y - other.y
-        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1)
-        const force = repulsion / (dist * dist)
-        node.vx += (dx / dist) * force
-        node.vy += (dy / dist) * force
+        const dist = Math.sqrt(dx * dx + dy * dy)
+
+        // Enforce minimum distance - strong push if too close
+        if (dist < minDistance && dist > 0) {
+          const pushStrength = (minDistance - dist) * 0.5
+          node.vx += (dx / dist) * pushStrength
+          node.vy += (dy / dist) * pushStrength
+        }
+
+        // Normal repulsion force
+        const safeDist = Math.max(dist, 10)
+        const force = repulsion / (safeDist * safeDist)
+        node.vx += (dx / safeDist) * force
+        node.vy += (dy / safeDist) * force
       })
 
       // Center force
@@ -202,27 +225,31 @@ export default function GraphPage() {
       target.vy -= dy * attraction
     })
 
-    // Update positions
+    // Update positions with velocity clamping
     nodes.forEach((node) => {
       if (node.fx === undefined || node.fx === null) {
         node.vx *= damping
+        // Clamp velocity
+        node.vx = Math.max(-maxVelocity, Math.min(maxVelocity, node.vx))
         node.x += node.vx
       }
       if (node.fy === undefined || node.fy === null) {
         node.vy *= damping
+        // Clamp velocity
+        node.vy = Math.max(-maxVelocity, Math.min(maxVelocity, node.vy))
         node.y += node.vy
       }
 
-      // Keep in bounds
-      node.x = Math.max(50, Math.min(width - 50, node.x))
-      node.y = Math.max(50, Math.min(height - 50, node.y))
+      // Keep in bounds with minimal padding (allow spread)
+      node.x = Math.max(40, Math.min(width - 40, node.x))
+      node.y = Math.max(40, Math.min(height - 40, node.y))
     })
 
     // Draw
     drawGraph(ctx, nodes, edges, width, height)
 
     animationRef.current = requestAnimationFrame(runSimulation)
-  }, [selectedNode, zoom, pan])
+  }, [selectedNode, hoveredNode, zoom, pan])
 
   const drawGraph = (
     ctx: CanvasRenderingContext2D,
@@ -231,10 +258,15 @@ export default function GraphPage() {
     width: number,
     height: number
   ) => {
-    ctx.save()
-    ctx.clearRect(0, 0, width, height)
+    const dpr = window.devicePixelRatio || 1
 
-    // Apply zoom and pan
+    // Clear canvas (full physical size)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, width * dpr, height * dpr)
+
+    // Apply DPR scaling first, then zoom and pan
+    // This ensures crisp rendering on high-DPI displays
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.translate(pan.x, pan.y)
     ctx.scale(zoom, zoom)
 
@@ -244,7 +276,7 @@ export default function GraphPage() {
       : nodes.filter((n) => selectedTypes.has(n.type))
     const visibleNodeIds = new Set(visibleNodes.map((n) => n.id))
 
-    // Draw edges
+    // Draw edges - thin lines only, no labels (reduces clutter)
     edges.forEach((edge) => {
       if (!visibleNodeIds.has(edge.source) || !visibleNodeIds.has(edge.target)) return
 
@@ -255,58 +287,67 @@ export default function GraphPage() {
       ctx.beginPath()
       ctx.moveTo(source.x, source.y)
       ctx.lineTo(target.x, target.y)
-      ctx.strokeStyle = 'rgba(99, 102, 106, 0.3)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle = 'rgba(99, 102, 106, 0.25)'
+      ctx.lineWidth = 0.5
       ctx.stroke()
-
-      // Draw edge label at midpoint
-      const midX = (source.x + target.x) / 2
-      const midY = (source.y + target.y) / 2
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.5)'
-      ctx.font = '10px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(edge.label.replace(/_/g, ' '), midX, midY)
     })
 
-    // Draw nodes
+    // Draw nodes - tiny dots for clean visualization
+    const colors: Record<string, string> = {
+      party: '#3b82f6',
+      person: '#a855f7',
+      date: '#10b981',
+      amount: '#f59e0b',
+      location: '#ef4444',
+      term: '#06b6d4',
+      percentage: '#ec4899',
+    }
+
     visibleNodes.forEach((node) => {
-      const config = entityTypeConfig[node.type] || { bg: 'bg-gray-500', color: 'text-gray-400' }
       const isSelected = selectedNode?.id === node.id
 
-      // Node circle
-      const radius = isSelected ? 24 : 20
+      // Node circle - small and crisp
+      const radius = isSelected ? 6 : 4
       ctx.beginPath()
       ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI)
-
-      // Color based on type
-      const colors: Record<string, string> = {
-        party: '#3b82f6',
-        person: '#a855f7',
-        date: '#10b981',
-        amount: '#f59e0b',
-        location: '#ef4444',
-        term: '#06b6d4',
-        percentage: '#ec4899',
-      }
       ctx.fillStyle = colors[node.type] || '#6b7280'
       ctx.fill()
 
       if (isSelected) {
         ctx.strokeStyle = '#c9a227'
-        ctx.lineWidth = 3
+        ctx.lineWidth = 1.5
         ctx.stroke()
       }
 
-      // Node label
-      ctx.fillStyle = '#f8fafc'
-      ctx.font = 'bold 11px sans-serif'
+      // Show truncated label below each node
+      const label = node.label.length > 14 ? node.label.slice(0, 12) + '..' : node.label
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.6)'
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
       ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      const label = node.label.length > 12 ? node.label.slice(0, 10) + '...' : node.label
-      ctx.fillText(label, node.x, node.y + radius + 14)
+      ctx.textBaseline = 'top'
+      ctx.fillText(label, node.x, node.y + radius + 3)
     })
 
-    ctx.restore()
+    // Show full label for hovered/selected node with background
+    const labelNode = selectedNode || hoveredNode
+    if (labelNode) {
+      const node = visibleNodes.find(n => n.id === labelNode.id)
+      if (node) {
+        const labelText = node.label
+        ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif'
+        const textWidth = ctx.measureText(labelText).width
+
+        // Draw background
+        ctx.fillStyle = 'rgba(10, 10, 11, 0.85)'
+        ctx.fillRect(node.x - textWidth/2 - 4, node.y - 20, textWidth + 8, 16)
+
+        // Draw label text above node
+        ctx.fillStyle = '#f1f5f9'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(labelText, node.x, node.y - 12)
+      }
+    }
   }
 
   // Canvas event handlers
@@ -318,11 +359,11 @@ export default function GraphPage() {
     const x = (e.clientX - rect.left - pan.x) / zoom
     const y = (e.clientY - rect.top - pan.y) / zoom
 
-    // Check if clicking on a node
+    // Check if clicking on a node (generous hitbox for tiny nodes)
     const clickedNode = nodesRef.current.find((node) => {
       const dx = node.x - x
       const dy = node.y - y
-      return Math.sqrt(dx * dx + dy * dy) < 25
+      return Math.sqrt(dx * dx + dy * dy) < 20
     })
 
     if (clickedNode) {
@@ -340,15 +381,26 @@ export default function GraphPage() {
     const canvas = canvasRef.current
     if (!canvas) return
 
+    const rect = canvas.getBoundingClientRect()
+    const x = (e.clientX - rect.left - pan.x) / zoom
+    const y = (e.clientY - rect.top - pan.y) / zoom
+
     if (draggedNode) {
-      const rect = canvas.getBoundingClientRect()
-      draggedNode.fx = (e.clientX - rect.left - pan.x) / zoom
-      draggedNode.fy = (e.clientY - rect.top - pan.y) / zoom
+      draggedNode.fx = x
+      draggedNode.fy = y
     } else if (isDragging) {
       setPan({
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y,
       })
+    } else {
+      // Check for hover on nodes
+      const hovered = nodesRef.current.find((node) => {
+        const dx = node.x - x
+        const dy = node.y - y
+        return Math.sqrt(dx * dx + dy * dy) < 20
+      })
+      setHoveredNode(hovered || null)
     }
   }
 
@@ -361,6 +413,11 @@ export default function GraphPage() {
     setIsDragging(false)
   }
 
+  const handleCanvasMouseLeave = () => {
+    handleCanvasMouseUp()
+    setHoveredNode(null)
+  }
+
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
@@ -368,7 +425,7 @@ export default function GraphPage() {
   }
 
   const resetView = () => {
-    setZoom(1)
+    setZoom(0.8)
     setPan({ x: 0, y: 0 })
     setSelectedNode(null)
     setSelectedTypes(new Set())
@@ -384,22 +441,39 @@ export default function GraphPage() {
     setSelectedTypes(newTypes)
   }
 
-  // Set canvas size
+  // Set canvas size and initialize graph when data is ready
   useEffect(() => {
+    if (!graphData || graphData.nodes.length === 0) return
+
     const canvas = canvasRef.current
     if (!canvas) return
 
     const resizeCanvas = () => {
       const container = canvas.parentElement
       if (!container) return
-      canvas.width = container.clientWidth
-      canvas.height = container.clientHeight
+      const rect = container.getBoundingClientRect()
+      const dpr = window.devicePixelRatio || 1
+
+      // Store logical size as data attributes for reference
+      canvas.dataset.logicalWidth = String(rect.width)
+      canvas.dataset.logicalHeight = String(rect.height)
+
+      // Set physical canvas size (multiplied by DPR for crisp pixels)
+      canvas.width = Math.floor(rect.width * dpr)
+      canvas.height = Math.floor(rect.height * dpr)
+
+      // Set CSS size to match container
+      canvas.style.width = `${rect.width}px`
+      canvas.style.height = `${rect.height}px`
     }
 
+    // Size canvas first, then initialize graph
     resizeCanvas()
+    initializeGraph(graphData)
+
     window.addEventListener('resize', resizeCanvas)
     return () => window.removeEventListener('resize', resizeCanvas)
-  }, [])
+  }, [graphData])
 
   // Cleanup animation
   useEffect(() => {
@@ -544,7 +618,7 @@ export default function GraphPage() {
               onMouseDown={handleCanvasMouseDown}
               onMouseMove={handleCanvasMouseMove}
               onMouseUp={handleCanvasMouseUp}
-              onMouseLeave={handleCanvasMouseUp}
+              onMouseLeave={handleCanvasMouseLeave}
               onWheel={handleWheel}
             />
           ) : (
