@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ArrowLeft, Network, Loader2, ZoomIn, ZoomOut, Maximize2,
+  ArrowLeft, Network, Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2,
   Filter, RefreshCw, Building2, User, Calendar, DollarSign,
   MapPin, Clock, Percent, FileText
 } from 'lucide-react'
@@ -48,11 +48,13 @@ export default function GraphPage() {
   const documentId = params.id as string
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number>()
   const nodesRef = useRef<Node[]>([])
   const edgesRef = useRef<Edge[]>([])
 
-  const [document, setDocument] = useState<Document | null>(null)
+  const [contractDoc, setContractDoc] = useState<Document | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loading, setLoading] = useState(true)
   const [extracting, setExtracting] = useState(false)
@@ -75,7 +77,7 @@ export default function GraphPage() {
         api.documents.get(documentId),
         api.graph.get(documentId).catch(() => null),
       ])
-      setDocument(doc)
+      setContractDoc(doc)
 
       if (graph && graph.nodes.length > 0) {
         setGraphData(graph)
@@ -441,6 +443,35 @@ export default function GraphPage() {
     setSelectedTypes(newTypes)
   }
 
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return
+
+    if (!document.fullscreenElement) {
+      try {
+        await containerRef.current.requestFullscreen()
+        setIsFullscreen(true)
+      } catch (err) {
+        console.error('Failed to enter fullscreen:', err)
+      }
+    } else {
+      try {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      } catch (err) {
+        console.error('Failed to exit fullscreen:', err)
+      }
+    }
+  }
+
+  // Listen for fullscreen changes (e.g., user presses Escape)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
   // Set canvas size and initialize graph when data is ready
   useEffect(() => {
     if (!graphData || graphData.nodes.length === 0) return
@@ -496,7 +527,7 @@ export default function GraphPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div ref={containerRef} className="min-h-screen flex flex-col bg-ink-950">
       {/* Header */}
       <header className="border-b border-ink-800/50 bg-ink-950/80 backdrop-blur-sm z-50">
         <div className="max-w-[1800px] mx-auto px-6 py-4">
@@ -512,7 +543,7 @@ export default function GraphPage() {
                 <h1 className="font-display text-xl font-bold tracking-tight">
                   Knowledge Graph
                 </h1>
-                <p className="text-xs text-ink-500">{document?.filename}</p>
+                <p className="text-xs text-ink-500">{contractDoc?.filename}</p>
               </div>
             </div>
 
@@ -526,21 +557,35 @@ export default function GraphPage() {
               )}
               <button
                 onClick={() => setZoom((z) => Math.min(3, z * 1.2))}
-                className="p-2 hover:bg-ink-800 rounded-lg transition-colors"
+                className="p-2 hover:bg-ink-800 rounded-lg transition-colors group relative"
+                title="Zoom In"
               >
-                <ZoomIn className="w-4 h-4 text-ink-400" />
+                <ZoomIn className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
               </button>
               <button
                 onClick={() => setZoom((z) => Math.max(0.3, z * 0.8))}
-                className="p-2 hover:bg-ink-800 rounded-lg transition-colors"
+                className="p-2 hover:bg-ink-800 rounded-lg transition-colors group relative"
+                title="Zoom Out"
               >
-                <ZoomOut className="w-4 h-4 text-ink-400" />
+                <ZoomOut className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
+              </button>
+              <button
+                onClick={toggleFullscreen}
+                className="p-2 hover:bg-ink-800 rounded-lg transition-colors group relative"
+                title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
+                ) : (
+                  <Maximize2 className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
+                )}
               </button>
               <button
                 onClick={resetView}
-                className="p-2 hover:bg-ink-800 rounded-lg transition-colors"
+                className="p-2 hover:bg-ink-800 rounded-lg transition-colors group relative"
+                title="Reset View"
               >
-                <Maximize2 className="w-4 h-4 text-ink-400" />
+                <RefreshCw className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
               </button>
               <Link
                 href={`/documents/${documentId}`}
