@@ -370,11 +370,11 @@ Public contract datasets for testing:
 - [x] Comprehensive E2E test suite (Chrome, Firefox, WebKit)
 - [x] Production deployment (Vercel frontend + VPS backend)
 - [x] Celery async job processing for extraction
+- [x] Export to Excel/Word/PDF/CSV/JSON
 
 ### Planned
 - [ ] Comparison matrix (multiple contracts)
 - [ ] Custom extraction templates
-- [ ] Export to Excel/Word/PDF
 - [ ] Deal room (transaction grouping)
 - [ ] Playbook compliance checking
 
