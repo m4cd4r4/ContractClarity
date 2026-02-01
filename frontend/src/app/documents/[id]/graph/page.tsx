@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Network, Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2,
   Filter, RefreshCw, Building2, User, Calendar, DollarSign,
-  MapPin, Clock, Percent, FileText
+  MapPin, Clock, Percent, FileText, Link2, ChevronRight, Quote
 } from 'lucide-react'
 import { api, Document, GraphData, Entity } from '@/lib/api'
 
@@ -679,26 +679,122 @@ export default function GraphPage() {
             })}
           </div>
 
-          {/* Selected Node Details */}
+          {/* Selected Node Details - Enhanced */}
           <AnimatePresence>
-            {selectedNode && (
+            {selectedNode && graphData && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="mt-6 pt-6 border-t border-ink-800/50"
+                className="mt-6 pt-6 border-t border-ink-800/50 space-y-4 max-h-[calc(100vh-400px)] overflow-y-auto"
               >
-                <h3 className="text-sm font-medium text-ink-400 mb-3">Selected Entity</h3>
+                <h3 className="text-sm font-medium text-ink-400">Selected Entity</h3>
+
+                {/* Entity Info */}
                 <div className="card p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className={`w-3 h-3 rounded-full ${entityTypeConfig[selectedNode.type]?.bg || 'bg-gray-500'}`} />
                     <span className="text-xs uppercase tracking-wider text-ink-500">{selectedNode.type}</span>
                   </div>
-                  <p className="font-medium text-ink-100">{selectedNode.label}</p>
-                  {selectedNode.value && (
-                    <p className="text-sm text-ink-400 mt-2">{selectedNode.value}</p>
+                  <p className="font-semibold text-ink-100 text-lg">{selectedNode.label}</p>
+                  {selectedNode.value && selectedNode.value !== selectedNode.label && (
+                    <p className="text-sm text-ink-400 mt-2 italic">{selectedNode.value}</p>
                   )}
                 </div>
+
+                {/* Connected Relationships */}
+                {(() => {
+                  const connectedEdges = graphData.edges.filter(
+                    e => e.source === selectedNode.id || e.target === selectedNode.id
+                  )
+                  if (connectedEdges.length === 0) return null
+
+                  return (
+                    <div>
+                      <h4 className="text-xs font-medium text-ink-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <Link2 className="w-3 h-3" />
+                        Relationships ({connectedEdges.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {connectedEdges.slice(0, 8).map((edge) => {
+                          const isSource = edge.source === selectedNode.id
+                          const otherId = isSource ? edge.target : edge.source
+                          const otherNode = graphData.nodes.find(n => n.id === otherId)
+                          if (!otherNode) return null
+
+                          return (
+                            <button
+                              key={edge.id}
+                              onClick={() => {
+                                const targetNode = nodesRef.current.find(n => n.id === otherId)
+                                if (targetNode) setSelectedNode(targetNode)
+                              }}
+                              className="w-full text-left p-2.5 bg-ink-900/50 hover:bg-ink-800/70 rounded-lg transition-colors group"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${entityTypeConfig[otherNode.type]?.bg || 'bg-gray-500'}`} />
+                                  <span className="text-sm text-ink-200 truncate">{otherNode.label}</span>
+                                </div>
+                                <ChevronRight className="w-3.5 h-3.5 text-ink-600 group-hover:text-accent flex-shrink-0" />
+                              </div>
+                              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-ink-500">
+                                <span className="uppercase">{otherNode.type}</span>
+                                {edge.label && edge.label !== 'relates_to' && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-accent/70">{edge.label.replace(/_/g, ' ')}</span>
+                                  </>
+                                )}
+                              </div>
+                            </button>
+                          )
+                        })}
+                        {connectedEdges.length > 8 && (
+                          <p className="text-xs text-ink-500 text-center py-1">
+                            +{connectedEdges.length - 8} more connections
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Entity Value/Context */}
+                {selectedNode.value && selectedNode.value.length > 30 && (
+                  <div>
+                    <h4 className="text-xs font-medium text-ink-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Quote className="w-3 h-3" />
+                      Context
+                    </h4>
+                    <div className="p-3 bg-ink-900/30 rounded-lg border border-ink-800/50">
+                      <p className="text-xs text-ink-400 leading-relaxed">
+                        {selectedNode.value}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick Stats for this entity */}
+                {(() => {
+                  const connectedCount = graphData.edges.filter(
+                    e => e.source === selectedNode.id || e.target === selectedNode.id
+                  ).length
+                  const sameTypeCount = graphData.nodes.filter(n => n.type === selectedNode.type).length
+
+                  return (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-2.5 bg-ink-900/30 rounded-lg text-center">
+                        <p className="text-lg font-bold font-mono text-ink-200">{connectedCount}</p>
+                        <p className="text-[10px] text-ink-500 uppercase">Connections</p>
+                      </div>
+                      <div className="p-2.5 bg-ink-900/30 rounded-lg text-center">
+                        <p className="text-lg font-bold font-mono text-ink-200">{sameTypeCount}</p>
+                        <p className="text-[10px] text-ink-500 uppercase">Same Type</p>
+                      </div>
+                    </div>
+                  )
+                })()}
               </motion.div>
             )}
           </AnimatePresence>

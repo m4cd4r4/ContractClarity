@@ -217,7 +217,7 @@ export default function DocumentDetailPage() {
 
       <main className="max-w-[1800px] mx-auto px-6 py-8">
         {/* Risk Summary */}
-        {analysis ? (
+        {analysis && analysis.clauses_extracted > 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -273,8 +273,14 @@ export default function DocumentDetailPage() {
             className="card p-8 mb-8 text-center"
           >
             <Zap className="w-12 h-12 text-accent/50 mx-auto" />
-            <h3 className="font-display text-lg font-semibold mt-4">Analysis Not Yet Run</h3>
-            <p className="text-ink-500 mt-2">Extract clauses and assess risk levels for this document.</p>
+            <h3 className="font-display text-lg font-semibold mt-4">
+              {analysis ? 'No Clauses Found' : 'Analysis Not Yet Run'}
+            </h3>
+            <p className="text-ink-500 mt-2">
+              {analysis
+                ? 'The AI extraction found no clauses in this document. Try re-running the extraction.'
+                : 'Extract clauses and assess risk levels for this document.'}
+            </p>
             <button
               onClick={triggerExtraction}
               disabled={extracting}
@@ -288,7 +294,7 @@ export default function DocumentDetailPage() {
               ) : (
                 <>
                   <Zap className="w-4 h-4 mr-2" />
-                  Run Clause Extraction
+                  {analysis ? 'Re-run Clause Extraction' : 'Run Clause Extraction'}
                 </>
               )}
             </button>

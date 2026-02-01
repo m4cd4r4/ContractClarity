@@ -225,6 +225,7 @@ export default function Dashboard() {
             label="Documents Indexed"
             sublabel="Ready for analysis"
             delay={0}
+            onClick={() => router.push('/search')}
           />
           <StatCard
             icon={<Database className="w-5 h-5" />}
@@ -232,6 +233,7 @@ export default function Dashboard() {
             label="Text Chunks"
             sublabel="Vector embeddings"
             delay={0.05}
+            onClick={() => router.push('/search')}
           />
           <StatCard
             icon={<Zap className="w-5 h-5" />}
@@ -239,6 +241,15 @@ export default function Dashboard() {
             label="Clauses Extracted"
             sublabel="AI-powered analysis"
             delay={0.1}
+            onClick={() => {
+              // Navigate to first completed document with clauses
+              const docWithClauses = documents.find(d => d.status === 'completed')
+              if (docWithClauses) {
+                router.push(`/documents/${docWithClauses.id}`)
+              } else {
+                router.push('/search')
+              }
+            }}
           />
           <StatCard
             icon={<TrendingUp className="w-5 h-5" />}
@@ -246,6 +257,13 @@ export default function Dashboard() {
             label="Ready for Review"
             sublabel="Completed processing"
             delay={0.15}
+            onClick={() => {
+              // Select first completed document
+              const completed = documents.find(d => d.status === 'completed')
+              if (completed) {
+                loadAnalysis(completed.id)
+              }
+            }}
           />
         </motion.div>
 
@@ -599,24 +617,32 @@ function StatCard({
   label,
   sublabel,
   delay,
+  onClick,
 }: {
   icon: React.ReactNode
   value: number
   label: string
   sublabel: string
   delay: number
+  onClick?: () => void
 }) {
+  const Wrapper = onClick ? motion.button : motion.div
   return (
-    <motion.div
+    <Wrapper
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.4 }}
-      className="card p-6 hover:border-accent/20 transition-all duration-300 group"
+      onClick={onClick}
+      className={`card p-6 hover:border-accent/20 transition-all duration-300 group text-left
+                ${onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]' : ''}`}
     >
       <div className="flex items-start justify-between mb-3">
         <div className="p-2.5 rounded-xl bg-accent/10 text-accent group-hover:bg-accent/20 transition-colors">
           {icon}
         </div>
+        {onClick && (
+          <ChevronRight className="w-4 h-4 text-ink-600 group-hover:text-accent transition-colors" />
+        )}
       </div>
       <div className="mt-2">
         <p className="text-3xl font-bold font-mono text-ink-50 tracking-tight">
@@ -625,6 +651,6 @@ function StatCard({
         <p className="text-sm font-semibold text-ink-300 mt-1">{label}</p>
         <p className="text-[10px] text-ink-500 mt-1 font-mono uppercase tracking-wide">{sublabel}</p>
       </div>
-    </motion.div>
+    </Wrapper>
   )
 }
