@@ -7,9 +7,10 @@ import Link from 'next/link'
 import {
   ArrowLeft, FileText, AlertTriangle, CheckCircle, Shield,
   Clock, Loader2, ChevronDown, ChevronRight, Network,
-  Filter, Download, Zap, RefreshCw
+  Filter, Download, Zap, RefreshCw, FileSpreadsheet, FileType, FileJson
 } from 'lucide-react'
-import { api, Document, Clause, AnalysisSummary } from '@/lib/api'
+import { api, Document, Clause, AnalysisSummary, Entity } from '@/lib/api'
+import { exportToExcel, exportToWord, exportToPDF, exportToCSV, exportToJSON } from '@/lib/export'
 
 type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
 
@@ -72,6 +73,9 @@ export default function DocumentDetailPage() {
   const [selectedRiskLevel, setSelectedRiskLevel] = useState<string | null>(null)
   const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set())
   const [showFilters, setShowFilters] = useState(false)
+  const [entities, setEntities] = useState<Entity[]>([])
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [exporting, setExporting] = useState<string | null>(null)
 
   useEffect(() => {
     loadDocument()
@@ -90,6 +94,9 @@ export default function DocumentDetailPage() {
         const clausesRes = await api.analysis.clauses(documentId)
         setClauses(clausesRes)
       }
+      // Load entities for export
+      const entitiesRes = await api.graph.entities(documentId).catch(() => [])
+      setEntities(entitiesRes)
     } catch (error) {
       console.error('Failed to load document:', error)
     } finally {
@@ -143,6 +150,35 @@ export default function DocumentDetailPage() {
     acc[clause.clause_type] = (acc[clause.clause_type] || 0) + 1
     return acc
   }, {} as Record<string, number>)
+
+  const handleExport = async (format: string) => {
+    if (!document) return
+    setExporting(format)
+    setShowExportMenu(false)
+    try {
+      switch (format) {
+        case 'excel':
+          await exportToExcel(document, analysis, clauses, entities)
+          break
+        case 'word':
+          await exportToWord(document, analysis, clauses, entities)
+          break
+        case 'pdf':
+          await exportToPDF(document, analysis, clauses, entities)
+          break
+        case 'csv':
+          exportToCSV(document, clauses)
+          break
+        case 'json':
+          exportToJSON(document, analysis, clauses, entities)
+          break
+      }
+    } catch (error) {
+      console.error('Export failed:', error)
+    } finally {
+      setExporting(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -210,6 +246,72 @@ export default function DocumentDetailPage() {
                 <Network className="w-4 h-4" />
                 Knowledge Graph
               </Link>
+
+              {/* Export Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowExportMenu(!showExportMenu)}
+                  disabled={exporting !== null}
+                  className="flex items-center gap-2 px-4 py-2 bg-ink-800 text-ink-200 rounded-lg
+                           hover:bg-ink-700 transition-colors disabled:opacity-50"
+                >
+                  {exporting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  {exporting ? 'Exporting...' : 'Export'}
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+
+                <AnimatePresence>
+                  {showExportMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="absolute right-0 mt-2 w-48 bg-ink-900 border border-ink-700 rounded-lg shadow-xl overflow-hidden z-50"
+                    >
+                      <button
+                        onClick={() => handleExport('pdf')}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-ink-200 hover:bg-ink-800 transition-colors"
+                      >
+                        <FileText className="w-4 h-4 text-red-400" />
+                        PDF Report
+                      </button>
+                      <button
+                        onClick={() => handleExport('excel')}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-ink-200 hover:bg-ink-800 transition-colors"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                        Excel (.xlsx)
+                      </button>
+                      <button
+                        onClick={() => handleExport('word')}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-ink-200 hover:bg-ink-800 transition-colors"
+                      >
+                        <FileType className="w-4 h-4 text-blue-400" />
+                        Word (.docx)
+                      </button>
+                      <div className="border-t border-ink-700" />
+                      <button
+                        onClick={() => handleExport('csv')}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-ink-200 hover:bg-ink-800 transition-colors"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-ink-400" />
+                        CSV (Clauses)
+                      </button>
+                      <button
+                        onClick={() => handleExport('json')}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-ink-200 hover:bg-ink-800 transition-colors"
+                      >
+                        <FileJson className="w-4 h-4 text-amber-400" />
+                        JSON (Full Data)
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
         </div>
