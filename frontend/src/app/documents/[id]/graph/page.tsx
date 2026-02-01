@@ -5,9 +5,9 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ArrowLeft, Network, Loader2, ZoomIn, ZoomOut, Maximize2,
+  ArrowLeft, Network, Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2,
   Filter, RefreshCw, Building2, User, Calendar, DollarSign,
-  MapPin, Clock, Percent, FileText
+  MapPin, Clock, Percent, FileText, Link2, ChevronRight, Quote
 } from 'lucide-react'
 import { api, Document, GraphData, Entity } from '@/lib/api'
 
@@ -48,18 +48,53 @@ export default function GraphPage() {
   const documentId = params.id as string
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number>()
   const nodesRef = useRef<Node[]>([])
   const edgesRef = useRef<Edge[]>([])
 
-  const [document, setDocument] = useState<Document | null>(null)
+  // Use refs for values that need to be accessed in the animation loop
+  // This prevents stale closure issues where the RAF loop captures old values
+  const zoomRef = useRef(1.0)
+  const panRef = useRef({ x: 0, y: 0 })
+  const selectedTypesRef = useRef<Set<string>>(new Set())
+  const selectedNodeRef = useRef<Node | null>(null)
+  const hoveredNodeRef = useRef<Node | null>(null)
+
+  const [contractDoc, setContractDoc] = useState<Document | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loading, setLoading] = useState(true)
   const [extracting, setExtracting] = useState(false)
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null)
-  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
-  const [zoom, setZoom] = useState(1)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [selectedNode, setSelectedNodeState] = useState<Node | null>(null)
+  const [hoveredNode, setHoveredNodeState] = useState<Node | null>(null)
+  const [selectedTypes, setSelectedTypesState] = useState<Set<string>>(new Set())
+  const [zoom, setZoomState] = useState(1.0)
+  const [pan, setPanState] = useState({ x: 0, y: 0 })
+
+  // Wrapper functions that update both state and ref
+  const setSelectedNode = (node: Node | null) => {
+    selectedNodeRef.current = node
+    setSelectedNodeState(node)
+  }
+  const setHoveredNode = (node: Node | null) => {
+    hoveredNodeRef.current = node
+    setHoveredNodeState(node)
+  }
+  const setSelectedTypes = (types: Set<string>) => {
+    selectedTypesRef.current = types
+    setSelectedTypesState(types)
+  }
+  const setZoom = (zoomOrFn: number | ((prev: number) => number)) => {
+    const newZoom = typeof zoomOrFn === 'function' ? zoomOrFn(zoomRef.current) : zoomOrFn
+    zoomRef.current = newZoom
+    setZoomState(newZoom)
+  }
+  const setPan = (panOrFn: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => {
+    const newPan = typeof panOrFn === 'function' ? panOrFn(panRef.current) : panOrFn
+    panRef.current = newPan
+    setPanState(newPan)
+  }
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [draggedNode, setDraggedNode] = useState<Node | null>(null)
@@ -74,11 +109,11 @@ export default function GraphPage() {
         api.documents.get(documentId),
         api.graph.get(documentId).catch(() => null),
       ])
-      setDocument(doc)
+      setContractDoc(doc)
 
       if (graph && graph.nodes.length > 0) {
         setGraphData(graph)
-        initializeGraph(graph)
+        // initializeGraph will be called by effect when graphData changes
       }
     } catch (error) {
       console.error('Failed to load graph:', error)
@@ -97,7 +132,7 @@ export default function GraphPage() {
         if (graph && graph.nodes.length > 0) {
           clearInterval(checkInterval)
           setGraphData(graph)
-          initializeGraph(graph)
+          // initializeGraph will be called by effect when graphData changes
           setExtracting(false)
         }
       }, 3000)
@@ -116,17 +151,26 @@ export default function GraphPage() {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const width = canvas.clientWidth
-    const height = canvas.clientHeight
+    // Get logical dimensions from container
+    const container = canvas.parentElement
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    const width = rect.width
+    const height = rect.height
 
-    // Initialize nodes with random positions in a circle
+    // Initialize nodes with wide spread + randomization
     nodesRef.current = data.nodes.map((node, i) => {
       const angle = (2 * Math.PI * i) / data.nodes.length
-      const radius = Math.min(width, height) * 0.3
+      // Wide initial radius filling more of the canvas
+      const baseRadius = Math.min(width, height) * 0.35
+      const radius = baseRadius * (0.5 + Math.random() * 0.5)
+      // Random offset to break symmetry
+      const jitterX = (Math.random() - 0.5) * 80
+      const jitterY = (Math.random() - 0.5) * 80
       return {
         ...node,
-        x: width / 2 + radius * Math.cos(angle),
-        y: height / 2 + radius * Math.sin(angle),
+        x: width / 2 + radius * Math.cos(angle) + jitterX,
+        y: height / 2 + radius * Math.sin(angle) + jitterY,
         vx: 0,
         vy: 0,
       }
@@ -150,14 +194,24 @@ export default function GraphPage() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const width = canvas.width
-    const height = canvas.height
+    // Use logical dimensions stored in data attributes
+    const width = Number(canvas.dataset.logicalWidth) || canvas.width
+    const height = Number(canvas.dataset.logicalHeight) || canvas.height
 
-    // Force simulation parameters
-    const repulsion = 5000
-    const attraction = 0.01
-    const damping = 0.9
-    const centerForce = 0.01
+    // Read current values from refs (not stale closure values)
+    const currentZoom = zoomRef.current
+    const currentPan = panRef.current
+    const currentSelectedTypes = selectedTypesRef.current
+    const currentSelectedNode = selectedNodeRef.current
+    const currentHoveredNode = hoveredNodeRef.current
+
+    // Force simulation parameters - tuned for spread and stability
+    const repulsion = 5000      // Very strong push apart
+    const attraction = 0.002    // Weak pull together
+    const damping = 0.9         // Higher friction to settle faster
+    const centerForce = 0.002   // Light centering to keep graph visible
+    const maxVelocity = 5       // Slower movement for stability
+    const minDistance = 80      // Larger minimum separation between nodes
 
     // Apply forces
     nodes.forEach((node) => {
@@ -170,15 +224,25 @@ export default function GraphPage() {
         node.vy = 0
       }
 
-      // Repulsion from other nodes
+      // Repulsion from other nodes with minimum distance enforcement
       nodes.forEach((other) => {
         if (node.id === other.id) return
         const dx = node.x - other.x
         const dy = node.y - other.y
-        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1)
-        const force = repulsion / (dist * dist)
-        node.vx += (dx / dist) * force
-        node.vy += (dy / dist) * force
+        const dist = Math.sqrt(dx * dx + dy * dy)
+
+        // Enforce minimum distance - strong push if too close
+        if (dist < minDistance && dist > 0) {
+          const pushStrength = (minDistance - dist) * 0.5
+          node.vx += (dx / dist) * pushStrength
+          node.vy += (dy / dist) * pushStrength
+        }
+
+        // Normal repulsion force
+        const safeDist = Math.max(dist, 10)
+        const force = repulsion / (safeDist * safeDist)
+        node.vx += (dx / safeDist) * force
+        node.vy += (dy / safeDist) * force
       })
 
       // Center force
@@ -202,49 +266,63 @@ export default function GraphPage() {
       target.vy -= dy * attraction
     })
 
-    // Update positions
+    // Update positions with velocity clamping
     nodes.forEach((node) => {
       if (node.fx === undefined || node.fx === null) {
         node.vx *= damping
+        // Clamp velocity
+        node.vx = Math.max(-maxVelocity, Math.min(maxVelocity, node.vx))
         node.x += node.vx
       }
       if (node.fy === undefined || node.fy === null) {
         node.vy *= damping
+        // Clamp velocity
+        node.vy = Math.max(-maxVelocity, Math.min(maxVelocity, node.vy))
         node.y += node.vy
       }
 
-      // Keep in bounds
-      node.x = Math.max(50, Math.min(width - 50, node.x))
-      node.y = Math.max(50, Math.min(height - 50, node.y))
+      // Keep in bounds with minimal padding (allow spread)
+      node.x = Math.max(40, Math.min(width - 40, node.x))
+      node.y = Math.max(40, Math.min(height - 40, node.y))
     })
 
-    // Draw
-    drawGraph(ctx, nodes, edges, width, height)
+    // Draw with current ref values
+    drawGraph(ctx, nodes, edges, width, height, currentZoom, currentPan, currentSelectedTypes, currentSelectedNode, currentHoveredNode)
 
     animationRef.current = requestAnimationFrame(runSimulation)
-  }, [selectedNode, zoom, pan])
+  }, []) // No deps needed - we read from refs
 
   const drawGraph = (
     ctx: CanvasRenderingContext2D,
     nodes: Node[],
     edges: Edge[],
     width: number,
-    height: number
+    height: number,
+    currentZoom: number,
+    currentPan: { x: number; y: number },
+    currentSelectedTypes: Set<string>,
+    currentSelectedNode: Node | null,
+    currentHoveredNode: Node | null
   ) => {
-    ctx.save()
-    ctx.clearRect(0, 0, width, height)
+    const dpr = window.devicePixelRatio || 1
 
-    // Apply zoom and pan
-    ctx.translate(pan.x, pan.y)
-    ctx.scale(zoom, zoom)
+    // Clear canvas (full physical size)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, width * dpr, height * dpr)
+
+    // Apply DPR scaling first, then zoom and pan
+    // This ensures crisp rendering on high-DPI displays
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.translate(currentPan.x, currentPan.y)
+    ctx.scale(currentZoom, currentZoom)
 
     // Filter nodes by selected types
-    const visibleNodes = selectedTypes.size === 0
+    const visibleNodes = currentSelectedTypes.size === 0
       ? nodes
-      : nodes.filter((n) => selectedTypes.has(n.type))
+      : nodes.filter((n) => currentSelectedTypes.has(n.type))
     const visibleNodeIds = new Set(visibleNodes.map((n) => n.id))
 
-    // Draw edges
+    // Draw edges - visible lines connecting nodes
     edges.forEach((edge) => {
       if (!visibleNodeIds.has(edge.source) || !visibleNodeIds.has(edge.target)) return
 
@@ -255,58 +333,67 @@ export default function GraphPage() {
       ctx.beginPath()
       ctx.moveTo(source.x, source.y)
       ctx.lineTo(target.x, target.y)
-      ctx.strokeStyle = 'rgba(99, 102, 106, 0.3)'
+      ctx.strokeStyle = 'rgba(99, 102, 106, 0.4)'
       ctx.lineWidth = 1
       ctx.stroke()
-
-      // Draw edge label at midpoint
-      const midX = (source.x + target.x) / 2
-      const midY = (source.y + target.y) / 2
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.5)'
-      ctx.font = '10px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(edge.label.replace(/_/g, ' '), midX, midY)
     })
 
-    // Draw nodes
-    visibleNodes.forEach((node) => {
-      const config = entityTypeConfig[node.type] || { bg: 'bg-gray-500', color: 'text-gray-400' }
-      const isSelected = selectedNode?.id === node.id
+    // Draw nodes - larger dots for better visibility
+    const colors: Record<string, string> = {
+      party: '#3b82f6',
+      person: '#a855f7',
+      date: '#10b981',
+      amount: '#f59e0b',
+      location: '#ef4444',
+      term: '#06b6d4',
+      percentage: '#ec4899',
+    }
 
-      // Node circle
-      const radius = isSelected ? 24 : 20
+    visibleNodes.forEach((node) => {
+      const isSelected = currentSelectedNode?.id === node.id
+      const isHovered = currentHoveredNode?.id === node.id
+
+      // Node circle - larger and more visible (was 4/6, now 10/14)
+      const radius = isSelected ? 14 : isHovered ? 12 : 10
       ctx.beginPath()
       ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI)
-
-      // Color based on type
-      const colors: Record<string, string> = {
-        party: '#3b82f6',
-        person: '#a855f7',
-        date: '#10b981',
-        amount: '#f59e0b',
-        location: '#ef4444',
-        term: '#06b6d4',
-        percentage: '#ec4899',
-      }
       ctx.fillStyle = colors[node.type] || '#6b7280'
       ctx.fill()
 
-      if (isSelected) {
-        ctx.strokeStyle = '#c9a227'
-        ctx.lineWidth = 3
-        ctx.stroke()
-      }
+      // Add border for better contrast
+      ctx.strokeStyle = isSelected ? '#fbbf24' : 'rgba(255, 255, 255, 0.3)'
+      ctx.lineWidth = isSelected ? 3 : 1.5
+      ctx.stroke()
 
-      // Node label
-      ctx.fillStyle = '#f8fafc'
-      ctx.font = 'bold 11px sans-serif'
+      // Show truncated label below each node
+      const label = node.label.length > 16 ? node.label.slice(0, 14) + '..' : node.label
+      ctx.fillStyle = 'rgba(226, 232, 240, 0.85)'
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif'
       ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      const label = node.label.length > 12 ? node.label.slice(0, 10) + '...' : node.label
-      ctx.fillText(label, node.x, node.y + radius + 14)
+      ctx.textBaseline = 'top'
+      ctx.fillText(label, node.x, node.y + radius + 5)
     })
 
-    ctx.restore()
+    // Show full label for hovered/selected node with background
+    const labelNode = currentSelectedNode || currentHoveredNode
+    if (labelNode) {
+      const node = visibleNodes.find(n => n.id === labelNode.id)
+      if (node) {
+        const labelText = node.label
+        ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, sans-serif'
+        const textWidth = ctx.measureText(labelText).width
+
+        // Draw background
+        ctx.fillStyle = 'rgba(10, 10, 11, 0.9)'
+        ctx.fillRect(node.x - textWidth/2 - 6, node.y - 28, textWidth + 12, 20)
+
+        // Draw label text above node
+        ctx.fillStyle = '#f1f5f9'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(labelText, node.x, node.y - 18)
+      }
+    }
   }
 
   // Canvas event handlers
@@ -315,10 +402,12 @@ export default function GraphPage() {
     if (!canvas) return
 
     const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX - rect.left - pan.x) / zoom
-    const y = (e.clientY - rect.top - pan.y) / zoom
+    const currentZoom = zoomRef.current
+    const currentPan = panRef.current
+    const x = (e.clientX - rect.left - currentPan.x) / currentZoom
+    const y = (e.clientY - rect.top - currentPan.y) / currentZoom
 
-    // Check if clicking on a node
+    // Check if clicking on a node (generous hitbox)
     const clickedNode = nodesRef.current.find((node) => {
       const dx = node.x - x
       const dy = node.y - y
@@ -332,7 +421,7 @@ export default function GraphPage() {
       setSelectedNode(clickedNode)
     } else {
       setIsDragging(true)
-      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
+      setDragStart({ x: e.clientX - currentPan.x, y: e.clientY - currentPan.y })
     }
   }
 
@@ -340,15 +429,28 @@ export default function GraphPage() {
     const canvas = canvasRef.current
     if (!canvas) return
 
+    const rect = canvas.getBoundingClientRect()
+    const currentZoom = zoomRef.current
+    const currentPan = panRef.current
+    const x = (e.clientX - rect.left - currentPan.x) / currentZoom
+    const y = (e.clientY - rect.top - currentPan.y) / currentZoom
+
     if (draggedNode) {
-      const rect = canvas.getBoundingClientRect()
-      draggedNode.fx = (e.clientX - rect.left - pan.x) / zoom
-      draggedNode.fy = (e.clientY - rect.top - pan.y) / zoom
+      draggedNode.fx = x
+      draggedNode.fy = y
     } else if (isDragging) {
       setPan({
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y,
       })
+    } else {
+      // Check for hover on nodes
+      const hovered = nodesRef.current.find((node) => {
+        const dx = node.x - x
+        const dy = node.y - y
+        return Math.sqrt(dx * dx + dy * dy) < 25
+      })
+      setHoveredNode(hovered || null)
     }
   }
 
@@ -361,14 +463,20 @@ export default function GraphPage() {
     setIsDragging(false)
   }
 
+  const handleCanvasMouseLeave = () => {
+    handleCanvasMouseUp()
+    setHoveredNode(null)
+  }
+
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setZoom((z) => Math.max(0.3, Math.min(3, z * delta)))
+    const newZoom = Math.max(0.3, Math.min(3, zoomRef.current * delta))
+    setZoom(newZoom)
   }
 
   const resetView = () => {
-    setZoom(1)
+    setZoom(1.0)
     setPan({ x: 0, y: 0 })
     setSelectedNode(null)
     setSelectedTypes(new Set())
@@ -384,22 +492,68 @@ export default function GraphPage() {
     setSelectedTypes(newTypes)
   }
 
-  // Set canvas size
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return
+
+    if (!document.fullscreenElement) {
+      try {
+        await containerRef.current.requestFullscreen()
+        setIsFullscreen(true)
+      } catch (err) {
+        console.error('Failed to enter fullscreen:', err)
+      }
+    } else {
+      try {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      } catch (err) {
+        console.error('Failed to exit fullscreen:', err)
+      }
+    }
+  }
+
+  // Listen for fullscreen changes (e.g., user presses Escape)
   useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  // Set canvas size and initialize graph when data is ready
+  useEffect(() => {
+    if (!graphData || graphData.nodes.length === 0) return
+
     const canvas = canvasRef.current
     if (!canvas) return
 
     const resizeCanvas = () => {
       const container = canvas.parentElement
       if (!container) return
-      canvas.width = container.clientWidth
-      canvas.height = container.clientHeight
+      const rect = container.getBoundingClientRect()
+      const dpr = window.devicePixelRatio || 1
+
+      // Store logical size as data attributes for reference
+      canvas.dataset.logicalWidth = String(rect.width)
+      canvas.dataset.logicalHeight = String(rect.height)
+
+      // Set physical canvas size (multiplied by DPR for crisp pixels)
+      canvas.width = Math.floor(rect.width * dpr)
+      canvas.height = Math.floor(rect.height * dpr)
+
+      // Set CSS size to match container
+      canvas.style.width = `${rect.width}px`
+      canvas.style.height = `${rect.height}px`
     }
 
+    // Size canvas first, then initialize graph
     resizeCanvas()
+    initializeGraph(graphData)
+
     window.addEventListener('resize', resizeCanvas)
     return () => window.removeEventListener('resize', resizeCanvas)
-  }, [])
+  }, [graphData])
 
   // Cleanup animation
   useEffect(() => {
@@ -422,7 +576,8 @@ export default function GraphPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div ref={containerRef} className={`min-h-screen flex flex-col bg-ink-950 ${isFullscreen ? 'fullscreen-container' : ''}`}
+         style={isFullscreen ? { width: '100vw', height: '100vh' } : undefined}>
       {/* Header */}
       <header className="border-b border-ink-800/50 bg-ink-950/80 backdrop-blur-sm z-50">
         <div className="max-w-[1800px] mx-auto px-6 py-4">
@@ -438,7 +593,7 @@ export default function GraphPage() {
                 <h1 className="font-display text-xl font-bold tracking-tight">
                   Knowledge Graph
                 </h1>
-                <p className="text-xs text-ink-500">{document?.filename}</p>
+                <p className="text-xs text-ink-500">{contractDoc?.filename}</p>
               </div>
             </div>
 
@@ -452,21 +607,35 @@ export default function GraphPage() {
               )}
               <button
                 onClick={() => setZoom((z) => Math.min(3, z * 1.2))}
-                className="p-2 hover:bg-ink-800 rounded-lg transition-colors"
+                className="p-2 hover:bg-ink-800 rounded-lg transition-colors group relative"
+                title="Zoom In"
               >
-                <ZoomIn className="w-4 h-4 text-ink-400" />
+                <ZoomIn className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
               </button>
               <button
                 onClick={() => setZoom((z) => Math.max(0.3, z * 0.8))}
-                className="p-2 hover:bg-ink-800 rounded-lg transition-colors"
+                className="p-2 hover:bg-ink-800 rounded-lg transition-colors group relative"
+                title="Zoom Out"
               >
-                <ZoomOut className="w-4 h-4 text-ink-400" />
+                <ZoomOut className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
+              </button>
+              <button
+                onClick={toggleFullscreen}
+                className="p-2 hover:bg-ink-800 rounded-lg transition-colors group relative"
+                title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
+                ) : (
+                  <Maximize2 className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
+                )}
               </button>
               <button
                 onClick={resetView}
-                className="p-2 hover:bg-ink-800 rounded-lg transition-colors"
+                className="p-2 hover:bg-ink-800 rounded-lg transition-colors group relative"
+                title="Reset View"
               >
-                <Maximize2 className="w-4 h-4 text-ink-400" />
+                <RefreshCw className="w-4 h-4 text-ink-400 group-hover:text-ink-200" />
               </button>
               <Link
                 href={`/documents/${documentId}`}
@@ -510,26 +679,122 @@ export default function GraphPage() {
             })}
           </div>
 
-          {/* Selected Node Details */}
+          {/* Selected Node Details - Enhanced */}
           <AnimatePresence>
-            {selectedNode && (
+            {selectedNode && graphData && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="mt-6 pt-6 border-t border-ink-800/50"
+                className="mt-6 pt-6 border-t border-ink-800/50 space-y-4 max-h-[calc(100vh-400px)] overflow-y-auto"
               >
-                <h3 className="text-sm font-medium text-ink-400 mb-3">Selected Entity</h3>
+                <h3 className="text-sm font-medium text-ink-400">Selected Entity</h3>
+
+                {/* Entity Info */}
                 <div className="card p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className={`w-3 h-3 rounded-full ${entityTypeConfig[selectedNode.type]?.bg || 'bg-gray-500'}`} />
                     <span className="text-xs uppercase tracking-wider text-ink-500">{selectedNode.type}</span>
                   </div>
-                  <p className="font-medium text-ink-100">{selectedNode.label}</p>
-                  {selectedNode.value && (
-                    <p className="text-sm text-ink-400 mt-2">{selectedNode.value}</p>
+                  <p className="font-semibold text-ink-100 text-lg">{selectedNode.label}</p>
+                  {selectedNode.value && selectedNode.value !== selectedNode.label && (
+                    <p className="text-sm text-ink-400 mt-2 italic">{selectedNode.value}</p>
                   )}
                 </div>
+
+                {/* Connected Relationships */}
+                {(() => {
+                  const connectedEdges = graphData.edges.filter(
+                    e => e.source === selectedNode.id || e.target === selectedNode.id
+                  )
+                  if (connectedEdges.length === 0) return null
+
+                  return (
+                    <div>
+                      <h4 className="text-xs font-medium text-ink-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <Link2 className="w-3 h-3" />
+                        Relationships ({connectedEdges.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {connectedEdges.slice(0, 8).map((edge) => {
+                          const isSource = edge.source === selectedNode.id
+                          const otherId = isSource ? edge.target : edge.source
+                          const otherNode = graphData.nodes.find(n => n.id === otherId)
+                          if (!otherNode) return null
+
+                          return (
+                            <button
+                              key={edge.id}
+                              onClick={() => {
+                                const targetNode = nodesRef.current.find(n => n.id === otherId)
+                                if (targetNode) setSelectedNode(targetNode)
+                              }}
+                              className="w-full text-left p-2.5 bg-ink-900/50 hover:bg-ink-800/70 rounded-lg transition-colors group"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${entityTypeConfig[otherNode.type]?.bg || 'bg-gray-500'}`} />
+                                  <span className="text-sm text-ink-200 truncate">{otherNode.label}</span>
+                                </div>
+                                <ChevronRight className="w-3.5 h-3.5 text-ink-600 group-hover:text-accent flex-shrink-0" />
+                              </div>
+                              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-ink-500">
+                                <span className="uppercase">{otherNode.type}</span>
+                                {edge.label && edge.label !== 'relates_to' && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-accent/70">{edge.label.replace(/_/g, ' ')}</span>
+                                  </>
+                                )}
+                              </div>
+                            </button>
+                          )
+                        })}
+                        {connectedEdges.length > 8 && (
+                          <p className="text-xs text-ink-500 text-center py-1">
+                            +{connectedEdges.length - 8} more connections
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Entity Value/Context */}
+                {selectedNode.value && selectedNode.value.length > 30 && (
+                  <div>
+                    <h4 className="text-xs font-medium text-ink-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Quote className="w-3 h-3" />
+                      Context
+                    </h4>
+                    <div className="p-3 bg-ink-900/30 rounded-lg border border-ink-800/50">
+                      <p className="text-xs text-ink-400 leading-relaxed">
+                        {selectedNode.value}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick Stats for this entity */}
+                {(() => {
+                  const connectedCount = graphData.edges.filter(
+                    e => e.source === selectedNode.id || e.target === selectedNode.id
+                  ).length
+                  const sameTypeCount = graphData.nodes.filter(n => n.type === selectedNode.type).length
+
+                  return (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-2.5 bg-ink-900/30 rounded-lg text-center">
+                        <p className="text-lg font-bold font-mono text-ink-200">{connectedCount}</p>
+                        <p className="text-[10px] text-ink-500 uppercase">Connections</p>
+                      </div>
+                      <div className="p-2.5 bg-ink-900/30 rounded-lg text-center">
+                        <p className="text-lg font-bold font-mono text-ink-200">{sameTypeCount}</p>
+                        <p className="text-[10px] text-ink-500 uppercase">Same Type</p>
+                      </div>
+                    </div>
+                  )
+                })()}
               </motion.div>
             )}
           </AnimatePresence>
@@ -544,7 +809,7 @@ export default function GraphPage() {
               onMouseDown={handleCanvasMouseDown}
               onMouseMove={handleCanvasMouseMove}
               onMouseUp={handleCanvasMouseUp}
-              onMouseLeave={handleCanvasMouseUp}
+              onMouseLeave={handleCanvasMouseLeave}
               onWheel={handleWheel}
             />
           ) : (
