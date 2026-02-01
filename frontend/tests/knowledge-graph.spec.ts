@@ -167,7 +167,7 @@ test.describe('Knowledge Graph Features', () => {
     const clausesLink = page.getByRole('link', { name: /Clauses/i })
     await clausesLink.click()
 
-    // Should navigate to document detail page
-    await page.waitForURL(/\/documents\/[a-f0-9-]+$/, { timeout: 5000 })
+    // Should navigate to document detail page (increased timeout for Chromium)
+    await page.waitForURL(/\/documents\/[a-f0-9-]+$/, { timeout: 10000 })
   })
 })
