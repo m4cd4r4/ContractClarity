@@ -53,16 +53,48 @@ export default function GraphPage() {
   const nodesRef = useRef<Node[]>([])
   const edgesRef = useRef<Edge[]>([])
 
+  // Use refs for values that need to be accessed in the animation loop
+  // This prevents stale closure issues where the RAF loop captures old values
+  const zoomRef = useRef(1.0)
+  const panRef = useRef({ x: 0, y: 0 })
+  const selectedTypesRef = useRef<Set<string>>(new Set())
+  const selectedNodeRef = useRef<Node | null>(null)
+  const hoveredNodeRef = useRef<Node | null>(null)
+
   const [contractDoc, setContractDoc] = useState<Document | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loading, setLoading] = useState(true)
   const [extracting, setExtracting] = useState(false)
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null)
-  const [hoveredNode, setHoveredNode] = useState<Node | null>(null)
-  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
-  const [zoom, setZoom] = useState(0.8)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [selectedNode, setSelectedNodeState] = useState<Node | null>(null)
+  const [hoveredNode, setHoveredNodeState] = useState<Node | null>(null)
+  const [selectedTypes, setSelectedTypesState] = useState<Set<string>>(new Set())
+  const [zoom, setZoomState] = useState(1.0)
+  const [pan, setPanState] = useState({ x: 0, y: 0 })
+
+  // Wrapper functions that update both state and ref
+  const setSelectedNode = (node: Node | null) => {
+    selectedNodeRef.current = node
+    setSelectedNodeState(node)
+  }
+  const setHoveredNode = (node: Node | null) => {
+    hoveredNodeRef.current = node
+    setHoveredNodeState(node)
+  }
+  const setSelectedTypes = (types: Set<string>) => {
+    selectedTypesRef.current = types
+    setSelectedTypesState(types)
+  }
+  const setZoom = (zoomOrFn: number | ((prev: number) => number)) => {
+    const newZoom = typeof zoomOrFn === 'function' ? zoomOrFn(zoomRef.current) : zoomOrFn
+    zoomRef.current = newZoom
+    setZoomState(newZoom)
+  }
+  const setPan = (panOrFn: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => {
+    const newPan = typeof panOrFn === 'function' ? panOrFn(panRef.current) : panOrFn
+    panRef.current = newPan
+    setPanState(newPan)
+  }
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [draggedNode, setDraggedNode] = useState<Node | null>(null)
@@ -166,6 +198,13 @@ export default function GraphPage() {
     const width = Number(canvas.dataset.logicalWidth) || canvas.width
     const height = Number(canvas.dataset.logicalHeight) || canvas.height
 
+    // Read current values from refs (not stale closure values)
+    const currentZoom = zoomRef.current
+    const currentPan = panRef.current
+    const currentSelectedTypes = selectedTypesRef.current
+    const currentSelectedNode = selectedNodeRef.current
+    const currentHoveredNode = hoveredNodeRef.current
+
     // Force simulation parameters - tuned for spread and stability
     const repulsion = 5000      // Very strong push apart
     const attraction = 0.002    // Weak pull together
@@ -247,18 +286,23 @@ export default function GraphPage() {
       node.y = Math.max(40, Math.min(height - 40, node.y))
     })
 
-    // Draw
-    drawGraph(ctx, nodes, edges, width, height)
+    // Draw with current ref values
+    drawGraph(ctx, nodes, edges, width, height, currentZoom, currentPan, currentSelectedTypes, currentSelectedNode, currentHoveredNode)
 
     animationRef.current = requestAnimationFrame(runSimulation)
-  }, [selectedNode, hoveredNode, zoom, pan])
+  }, []) // No deps needed - we read from refs
 
   const drawGraph = (
     ctx: CanvasRenderingContext2D,
     nodes: Node[],
     edges: Edge[],
     width: number,
-    height: number
+    height: number,
+    currentZoom: number,
+    currentPan: { x: number; y: number },
+    currentSelectedTypes: Set<string>,
+    currentSelectedNode: Node | null,
+    currentHoveredNode: Node | null
   ) => {
     const dpr = window.devicePixelRatio || 1
 
@@ -269,16 +313,16 @@ export default function GraphPage() {
     // Apply DPR scaling first, then zoom and pan
     // This ensures crisp rendering on high-DPI displays
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.translate(pan.x, pan.y)
-    ctx.scale(zoom, zoom)
+    ctx.translate(currentPan.x, currentPan.y)
+    ctx.scale(currentZoom, currentZoom)
 
     // Filter nodes by selected types
-    const visibleNodes = selectedTypes.size === 0
+    const visibleNodes = currentSelectedTypes.size === 0
       ? nodes
-      : nodes.filter((n) => selectedTypes.has(n.type))
+      : nodes.filter((n) => currentSelectedTypes.has(n.type))
     const visibleNodeIds = new Set(visibleNodes.map((n) => n.id))
 
-    // Draw edges - thin lines only, no labels (reduces clutter)
+    // Draw edges - visible lines connecting nodes
     edges.forEach((edge) => {
       if (!visibleNodeIds.has(edge.source) || !visibleNodeIds.has(edge.target)) return
 
@@ -289,12 +333,12 @@ export default function GraphPage() {
       ctx.beginPath()
       ctx.moveTo(source.x, source.y)
       ctx.lineTo(target.x, target.y)
-      ctx.strokeStyle = 'rgba(99, 102, 106, 0.25)'
-      ctx.lineWidth = 0.5
+      ctx.strokeStyle = 'rgba(99, 102, 106, 0.4)'
+      ctx.lineWidth = 1
       ctx.stroke()
     })
 
-    // Draw nodes - tiny dots for clean visualization
+    // Draw nodes - larger dots for better visibility
     const colors: Record<string, string> = {
       party: '#3b82f6',
       person: '#a855f7',
@@ -306,48 +350,48 @@ export default function GraphPage() {
     }
 
     visibleNodes.forEach((node) => {
-      const isSelected = selectedNode?.id === node.id
+      const isSelected = currentSelectedNode?.id === node.id
+      const isHovered = currentHoveredNode?.id === node.id
 
-      // Node circle - small and crisp
-      const radius = isSelected ? 6 : 4
+      // Node circle - larger and more visible (was 4/6, now 10/14)
+      const radius = isSelected ? 14 : isHovered ? 12 : 10
       ctx.beginPath()
       ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI)
       ctx.fillStyle = colors[node.type] || '#6b7280'
       ctx.fill()
 
-      if (isSelected) {
-        ctx.strokeStyle = '#c9a227'
-        ctx.lineWidth = 1.5
-        ctx.stroke()
-      }
+      // Add border for better contrast
+      ctx.strokeStyle = isSelected ? '#fbbf24' : 'rgba(255, 255, 255, 0.3)'
+      ctx.lineWidth = isSelected ? 3 : 1.5
+      ctx.stroke()
 
       // Show truncated label below each node
-      const label = node.label.length > 14 ? node.label.slice(0, 12) + '..' : node.label
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.6)'
-      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
+      const label = node.label.length > 16 ? node.label.slice(0, 14) + '..' : node.label
+      ctx.fillStyle = 'rgba(226, 232, 240, 0.85)'
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
-      ctx.fillText(label, node.x, node.y + radius + 3)
+      ctx.fillText(label, node.x, node.y + radius + 5)
     })
 
     // Show full label for hovered/selected node with background
-    const labelNode = selectedNode || hoveredNode
+    const labelNode = currentSelectedNode || currentHoveredNode
     if (labelNode) {
       const node = visibleNodes.find(n => n.id === labelNode.id)
       if (node) {
         const labelText = node.label
-        ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif'
+        ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, sans-serif'
         const textWidth = ctx.measureText(labelText).width
 
         // Draw background
-        ctx.fillStyle = 'rgba(10, 10, 11, 0.85)'
-        ctx.fillRect(node.x - textWidth/2 - 4, node.y - 20, textWidth + 8, 16)
+        ctx.fillStyle = 'rgba(10, 10, 11, 0.9)'
+        ctx.fillRect(node.x - textWidth/2 - 6, node.y - 28, textWidth + 12, 20)
 
         // Draw label text above node
         ctx.fillStyle = '#f1f5f9'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText(labelText, node.x, node.y - 12)
+        ctx.fillText(labelText, node.x, node.y - 18)
       }
     }
   }
@@ -358,14 +402,16 @@ export default function GraphPage() {
     if (!canvas) return
 
     const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX - rect.left - pan.x) / zoom
-    const y = (e.clientY - rect.top - pan.y) / zoom
+    const currentZoom = zoomRef.current
+    const currentPan = panRef.current
+    const x = (e.clientX - rect.left - currentPan.x) / currentZoom
+    const y = (e.clientY - rect.top - currentPan.y) / currentZoom
 
-    // Check if clicking on a node (generous hitbox for tiny nodes)
+    // Check if clicking on a node (generous hitbox)
     const clickedNode = nodesRef.current.find((node) => {
       const dx = node.x - x
       const dy = node.y - y
-      return Math.sqrt(dx * dx + dy * dy) < 20
+      return Math.sqrt(dx * dx + dy * dy) < 25
     })
 
     if (clickedNode) {
@@ -375,7 +421,7 @@ export default function GraphPage() {
       setSelectedNode(clickedNode)
     } else {
       setIsDragging(true)
-      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
+      setDragStart({ x: e.clientX - currentPan.x, y: e.clientY - currentPan.y })
     }
   }
 
@@ -384,8 +430,10 @@ export default function GraphPage() {
     if (!canvas) return
 
     const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX - rect.left - pan.x) / zoom
-    const y = (e.clientY - rect.top - pan.y) / zoom
+    const currentZoom = zoomRef.current
+    const currentPan = panRef.current
+    const x = (e.clientX - rect.left - currentPan.x) / currentZoom
+    const y = (e.clientY - rect.top - currentPan.y) / currentZoom
 
     if (draggedNode) {
       draggedNode.fx = x
@@ -400,7 +448,7 @@ export default function GraphPage() {
       const hovered = nodesRef.current.find((node) => {
         const dx = node.x - x
         const dy = node.y - y
-        return Math.sqrt(dx * dx + dy * dy) < 20
+        return Math.sqrt(dx * dx + dy * dy) < 25
       })
       setHoveredNode(hovered || null)
     }
@@ -423,11 +471,12 @@ export default function GraphPage() {
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setZoom((z) => Math.max(0.3, Math.min(3, z * delta)))
+    const newZoom = Math.max(0.3, Math.min(3, zoomRef.current * delta))
+    setZoom(newZoom)
   }
 
   const resetView = () => {
-    setZoom(0.8)
+    setZoom(1.0)
     setPan({ x: 0, y: 0 })
     setSelectedNode(null)
     setSelectedTypes(new Set())
@@ -527,7 +576,8 @@ export default function GraphPage() {
   }
 
   return (
-    <div ref={containerRef} className="min-h-screen flex flex-col bg-ink-950">
+    <div ref={containerRef} className={`min-h-screen flex flex-col bg-ink-950 ${isFullscreen ? 'fullscreen-container' : ''}`}
+         style={isFullscreen ? { width: '100vw', height: '100vh' } : undefined}>
       {/* Header */}
       <header className="border-b border-ink-800/50 bg-ink-950/80 backdrop-blur-sm z-50">
         <div className="max-w-[1800px] mx-auto px-6 py-4">
