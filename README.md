@@ -4,13 +4,13 @@
 
 **AI-Powered Contract Analysis for M&A Due Diligence**
 
-[![Playwright Tests](https://img.shields.io/badge/E2E_Tests-12%20passed-brightgreen?style=flat-square)](./frontend/tests)
+[![Playwright Tests](https://img.shields.io/badge/E2E_Tests-57%20passed-brightgreen?style=flat-square)](./frontend/tests)
 [![Next.js](https://img.shields.io/badge/Next.js-14.1-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20+%20pgvector-336791?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 
-[Live Demo](http://45.77.233.102:8003) | [Documentation](./docs/DEMO.md) | [API Reference](#api-reference)
+[Live Demo](https://contractclarity-app.vercel.app) | [API](http://45.77.233.102:8003/docs) | [Documentation](#quick-start)
 
 </div>
 
@@ -134,7 +134,7 @@ Upload PDF
 | **TailwindCSS** | Utility-first styling |
 | **Framer Motion** | Animations |
 | **React Query** | Data fetching & caching |
-| **Playwright** | E2E testing (12 tests) |
+| **Playwright** | E2E testing (57 tests across 3 browsers) |
 
 ---
 
@@ -171,8 +171,10 @@ npm run dev
 
 | Service | URL |
 |---------|-----|
-| Frontend | http://localhost:3000 |
-| API Docs | http://localhost:8003/docs |
+| Frontend (local) | http://localhost:3000 |
+| Frontend (prod) | https://contractclarity-app.vercel.app |
+| API Docs (local) | http://localhost:8003/docs |
+| API (prod) | http://45.77.233.102:8003 |
 | MinIO Console | http://localhost:9001 |
 
 ---
@@ -360,11 +362,16 @@ Public contract datasets for testing:
 
 ## Roadmap
 
+### Completed
 - [x] PDF upload with 4-tier OCR pipeline
-- [x] Clause extraction with risk scoring
-- [x] Knowledge graph visualization
+- [x] Clause extraction with risk scoring (16 clause types)
+- [x] Knowledge graph visualization (interactive canvas with zoom/pan/filters)
 - [x] Hybrid semantic search
-- [x] Playwright E2E tests (12 tests)
+- [x] Comprehensive E2E tests (57 tests across Chrome, Firefox, WebKit)
+- [x] Production deployment (Vercel frontend + VPS backend)
+- [x] Celery async job processing for extraction
+
+### Planned
 - [ ] Comparison matrix (multiple contracts)
 - [ ] Custom extraction templates
 - [ ] Export to Excel/Word/PDF
