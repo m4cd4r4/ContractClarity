@@ -4,7 +4,7 @@
 
 **AI-Powered Contract Analysis for M&A Due Diligence**
 
-[![Playwright Tests](https://img.shields.io/badge/E2E_Tests-57%20passed-brightgreen?style=flat-square)](./frontend/tests)
+[![Playwright Tests](https://img.shields.io/badge/E2E_Tests-passing-brightgreen?style=flat-square)](./frontend/tests)
 [![Next.js](https://img.shields.io/badge/Next.js-14.1-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20+%20pgvector-336791?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
@@ -134,7 +134,7 @@ Upload PDF
 | **TailwindCSS** | Utility-first styling |
 | **Framer Motion** | Animations |
 | **React Query** | Data fetching & caching |
-| **Playwright** | E2E testing (57 tests across 3 browsers) |
+| **Playwright** | Cross-browser E2E testing |
 
 ---
 
@@ -367,7 +367,7 @@ Public contract datasets for testing:
 - [x] Clause extraction with risk scoring (16 clause types)
 - [x] Knowledge graph visualization (interactive canvas with zoom/pan/filters)
 - [x] Hybrid semantic search
-- [x] Comprehensive E2E tests (57 tests across Chrome, Firefox, WebKit)
+- [x] Comprehensive E2E test suite (Chrome, Firefox, WebKit)
 - [x] Production deployment (Vercel frontend + VPS backend)
 - [x] Celery async job processing for extraction
 

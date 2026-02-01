@@ -19,7 +19,7 @@ A guided demonstration of ContractClarity's AI-powered contract analysis capabil
 
 ## Step 1: Dashboard Overview
 
-**Open**: http://localhost:3000
+**Open**: https://contractclarity-app.vercel.app (or http://localhost:3000 for local dev)
 
 ### Talking Points
 
@@ -158,7 +158,7 @@ A guided demonstration of ContractClarity's AI-powered contract analysis capabil
 
 > "Let me show you what's under the hood."
 
-**Open**: http://localhost:8003/docs (FastAPI Swagger UI)
+**Open**: http://45.77.233.102:8003/docs (FastAPI Swagger UI)
 
 **Point out:**
 - **Clean API design** - RESTful endpoints
@@ -167,7 +167,7 @@ A guided demonstration of ContractClarity's AI-powered contract analysis capabil
 
 ### Code Quality Indicators
 
-- **12 Playwright E2E tests** - Comprehensive UI testing
+- **Playwright E2E tests** - Cross-browser testing (Chrome, Firefox, WebKit)
 - **TypeScript frontend** - Type safety throughout
 - **Docker Compose** - Single command deployment
 - **Celery workers** - Production-ready async processing
@@ -213,8 +213,8 @@ Queue:    Redis
 
 Before starting:
 
-- [ ] Frontend running at http://localhost:3000
-- [ ] Backend running at http://localhost:8003
+- [ ] Frontend accessible at https://contractclarity-app.vercel.app (or http://localhost:3000 locally)
+- [ ] Backend accessible at http://45.77.233.102:8003 (or http://localhost:8003 locally)
 - [ ] At least one contract uploaded and processed
 - [ ] Clause extraction completed on demo document
 - [ ] Entity extraction completed (for knowledge graph)
@@ -281,4 +281,4 @@ If short on time:
 
 ---
 
-*Last updated: January 2026*
+*Last updated: February 2026*
